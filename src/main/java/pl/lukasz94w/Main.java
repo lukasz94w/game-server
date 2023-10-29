@@ -1,10 +1,13 @@
 package pl.lukasz94w;
 
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
 public class Main {
 
-
     public static void main(String[] args) {
-        TCPServer server = new TCPServer(9999);
+        SpringApplication.run(Main.class, args);
     }
 
     public static int someTestMethodForJenkinsTesting(int number1, int number2) {
