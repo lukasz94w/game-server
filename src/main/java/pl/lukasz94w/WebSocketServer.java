@@ -1,5 +1,6 @@
 package pl.lukasz94w;
 
+import org.javatuples.Pair;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,45 +11,70 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 public class WebSocketServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
+
     private final Set<WebSocketSession> sessions = new CopyOnWriteArraySet<>();
 
-    private int numberOfOpenedSessions = 0;
-    private final LinkedHashMap<WebSocketSession, WebSocketSession> pairedSessions = new LinkedHashMap<>();
-    private final Map<WebSocketSession, Long> lastHeartbeats = new ConcurrentHashMap<>();
+    private final Map<WebSocketSession, Long> sessionsLastHeartbeat = new ConcurrentHashMap<>();
+
+    private final List<Pair<WebSocketSession, WebSocketSession>> pairedSessions = new CopyOnWriteArrayList<>();
+
+    private final static String SERVER_MESSAGE_KEY = "serverMessage";
+
+    private final static String SERVER_HEARTBEAT = "serverHeartbeat";
+
+    private final static String SERVER_PAIRED_SESSION_DISCONNECTED = "serverPairedSessionDisconnected";
+
+    private final static String CLIENT_MESSAGE_KEY = "clientMessage";
+
+    private final static String CLIENT_HEARTBEAT = "clientHeartBeat";
 
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+    public void afterConnectionEstablished(WebSocketSession session) {
         logger.info("Server connection opened with session id: {}", session.getId());
-        initializeSession(session);
-        handleSessionsPairing(session);
+        sessions.add(session);
+
+        try {
+            handleSessionsPairing(session);
+        } catch (Exception e) {
+            logger.error("Exception in afterConnectionEstablished: {}", e.getMessage());
+        }
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        // interesting it got triggered when client lost the connection (the status.reason was Go away!)
-        // TODO: inform there paired session about losing connectivity by sending specific message f.e. "session ended"
-        // also remove there paired sessions
-        logger.info("Server connection closed: {}", status);
-        sessions.remove(session);
+    public void afterConnectionClosed(WebSocketSession disconnectingSession, CloseStatus status) {
+        logger.info("Server connection closed: {}, session id: {}", status, disconnectingSession.getId());
+
+        try {
+            handleDisconnection(disconnectingSession);
+        } catch (Exception e) {
+            logger.error("Exception in afterConnectionClosed: {}", e.getMessage());
+        }
     }
 
     @Override
-    public void handleTextMessage(WebSocketSession callingSession, TextMessage message) throws Exception {
-        String extractedMessage = new JSONObject(message.getPayload()).getString("message");
+    public void handleTextMessage(WebSocketSession callingSession, TextMessage message) {
+        JSONObject jsonMessage = new JSONObject(message.getPayload());
 
-        if (extractedMessage.equals("heartbeat_iss")) {
-            handleHeartbeat(callingSession);
-        } else {
-            handleMessageForwarding(callingSession, extractedMessage);
+        try {
+            if (jsonMessage.has(CLIENT_MESSAGE_KEY)) {
+                handleMessageForwarding(callingSession, jsonMessage);
+            } else if (jsonMessage.has(CLIENT_HEARTBEAT)) {
+                handleHeartbeat(callingSession);
+            } else {
+                logger.info("Unknown type of message from session: {}", callingSession.getId());
+            }
+        } catch (Exception e) {
+            logger.error("Exception in handleTextMessage: {}", e.getMessage());
         }
     }
 
@@ -56,81 +82,113 @@ public class WebSocketServer extends TextWebSocketHandler {
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         // TODO: I think this method could be used when f.e. session cannot send a message to it's paired counterpart, then we could try to implement
         // retry policy of sending messages or something like that
-        logger.info("Server transport error: {}", exception.getMessage());
-    }
-
-    @Scheduled(fixedRate = 10000)
-    void inactiveSessionsCleaner() {
-        long currentTimestamp = System.currentTimeMillis();
-        for (WebSocketSession session : lastHeartbeats.keySet()) {
-            long lastHeartbeat = lastHeartbeats.get(session);
-            if (currentTimestamp - lastHeartbeat > 35000 && session.isOpen()) {
-                try {
-                    logger.info("Inactive session detected: {}, closing it...", session.getId());
-                    session.close(); // I saw it probably cause afterConnectionClose to be triggered, so maybe there removed paired sessions and inform paired session about closing it?
-                    sessions.remove(session);
-                    lastHeartbeats.remove(session);
-                } catch (IOException e) {
-                    logger.error("Exception during closing idle session with id: {}", session.getId());
-                }
-            }
-        }
-    }
-
-    private void initializeSession(WebSocketSession session) {
-        sessions.add(session);
-        numberOfOpenedSessions++;
-        lastHeartbeats.put(session, System.currentTimeMillis());
+        logger.error("Exception in handleTransportError: {}", exception.getMessage());
     }
 
     private void handleSessionsPairing(WebSocketSession newSession) throws IOException {
-        if (numberOfOpenedSessions % 2 != 0) {
-            pairedSessions.put(newSession, null);
-            newSession.sendMessage(new TextMessage("Successfully connected. Waiting for another player to join..."));
+        if (sessions.size() % 2 != 0) {
+            pairedSessions.add(new Pair<>(newSession, null));
+
+            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE_KEY, "Successfully connected. Waiting for another player to join...");
+            newSession.sendMessage(new TextMessage(jsonMessage.toString()));
         } else {
-            WebSocketSession lastSessionWithoutAssignedPair = pairedSessions.lastEntry().getKey();
-            pairedSessions.put(lastSessionWithoutAssignedPair, newSession);
-            lastSessionWithoutAssignedPair.sendMessage(new TextMessage("Your opponent has connected. Let's the party started!"));
-            newSession.sendMessage(new TextMessage("Successfully connected. Good luck!"));
+            WebSocketSession lonelySession = pairedSessions.getLast().getValue0();
+            pairedSessions.removeLast();
+            pairedSessions.add(new Pair<>(lonelySession, newSession));
+
+            JSONObject jsonMessageForLastSessionWithoutPair = new JSONObject().put("serverMessage", "Your opponent has connected. Let's the party started!");
+            lonelySession.sendMessage(new TextMessage(jsonMessageForLastSessionWithoutPair.toString()));
+
+            JSONObject jsonMessageForNewSession = new JSONObject().put(SERVER_MESSAGE_KEY, "Successfully connected. Good luck!");
+            newSession.sendMessage(new TextMessage(jsonMessageForNewSession.toString()));
         }
 
         logger.info("Summarize of current sessions: {}", pairedSessions);
     }
 
     private void handleHeartbeat(WebSocketSession callingSession) throws IOException {
-        lastHeartbeats.put(callingSession, System.currentTimeMillis());
-        callingSession.sendMessage(new TextMessage("heartbeat_ack"));
+        sessionsLastHeartbeat.put(callingSession, System.currentTimeMillis());
+        JSONObject jsonMessage = new JSONObject().put(SERVER_HEARTBEAT, System.currentTimeMillis());
+        callingSession.sendMessage(new TextMessage(jsonMessage.toString()));
     }
 
-    private void handleMessageForwarding(WebSocketSession callingSession, String extractedMessage) throws IOException {
-        WebSocketSession pairedSession = findPairedSession(callingSession);
-
+    private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject messageFromMessagingSession) throws IOException {
+        WebSocketSession pairedSession = findPairedSession(messagingSession);
         if (pairedSession != null) {
-            pairedSession.sendMessage(new TextMessage(extractedMessage));
+            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE_KEY, messageFromMessagingSession.getString("clientMessage"));
+            pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
         } else {
-            callingSession.sendMessage(new TextMessage("Please wait for the next player to join..."));
+            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE_KEY, "Please wait for the next player to join...");
+            messagingSession.sendMessage(new TextMessage(jsonMessage.toString()));
         }
     }
+
+    private void handleDisconnection(WebSocketSession disconnectingSession) throws IOException {
+        WebSocketSession pairedSession = findPairedSession(disconnectingSession);
+
+        if (pairedSession != null) {
+            if (pairedSession.isOpen()) {
+                JSONObject jsonMessage = new JSONObject().put(SERVER_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected");
+                pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
+                pairedSession.close();
+            }
+
+            sessions.remove(pairedSession);
+            sessions.remove(disconnectingSession);
+            removePairFromPairs(disconnectingSession);
+        } else {
+            sessions.remove(disconnectingSession);
+            removeLonelyFromPairs(disconnectingSession);
+        }
+    }
+
 
     private WebSocketSession findPairedSession(WebSocketSession messagingSession) {
-        WebSocketSession pairedSession;
-
-        // find by key
-        pairedSession = pairedSessions.get(messagingSession);
-        if (pairedSession != null) {
-            return pairedSession;
-        }
-
-        // find by value
-        Set<Map.Entry<WebSocketSession, WebSocketSession>> sessionEntries = pairedSessions.entrySet();
-        for (Map.Entry<WebSocketSession, WebSocketSession> sessionEntry : sessionEntries) {
-            if (sessionEntry.getValue() != null) {
-                if (sessionEntry.getValue().equals(messagingSession)) {
-                    pairedSession = sessionEntry.getKey();
-                }
+        for (Pair<WebSocketSession, WebSocketSession> pairedSession : pairedSessions) {
+            if (pairedSession.getValue0() == messagingSession) {
+                return pairedSession.getValue1();
+            }
+            if (pairedSession.getValue1() == messagingSession) {
+                return pairedSession.getValue0();
             }
         }
 
-        return pairedSession;
+        return null;
+    }
+
+    private void removePairFromPairs(WebSocketSession disconnectingSession) {
+        for (Pair<WebSocketSession, WebSocketSession> pairedSession : pairedSessions) {
+            if (pairedSession.getValue0() == disconnectingSession || pairedSession.getValue1() == disconnectingSession) {
+                pairedSessions.remove(pairedSession);
+                break;
+            }
+        }
+    }
+
+    private void removeLonelyFromPairs(WebSocketSession disconnectingSession) {
+        for (Pair<WebSocketSession, WebSocketSession> lonelySession : pairedSessions) {
+            if (lonelySession.getValue0() == disconnectingSession) {
+                pairedSessions.remove(lonelySession);
+                break;
+            }
+        }
+    }
+
+    @Scheduled(fixedRate = 10000)
+    void inactiveSessionsCleaner() {
+        long currentTimestamp = System.currentTimeMillis();
+        for (WebSocketSession session : sessionsLastHeartbeat.keySet()) {
+            long lastHeartbeat = sessionsLastHeartbeat.get(session);
+            if (currentTimestamp - lastHeartbeat > 35000 && session.isOpen()) {
+                try {
+                    logger.info("Inactive session detected: {}, closing it...", session.getId());
+                    session.close(); // I saw it probably cause afterConnectionClose to be triggered, so maybe there removed paired sessions and inform paired session about closing it?
+                    sessions.remove(session);
+                    sessionsLastHeartbeat.remove(session);
+                } catch (IOException e) {
+                    logger.error("Exception in inactiveSessionsCleaner, during closing idle session with id: {}", session.getId());
+                }
+            }
+        }
     }
 }
