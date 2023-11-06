@@ -36,12 +36,12 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     private final static String CLIENT_MESSAGE_KEY = "clientMessage";
 
-    private final static String CLIENT_HEARTBEAT = "clientHeartBeat";
+    private final static String CLIENT_HEARTBEAT = "clientHeartbeat";
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         logger.info("Server connection opened with session id: {}", session.getId());
-        sessions.add(session);
+        addSession(session);
 
         try {
             handleSessionsPairing(session);
@@ -71,7 +71,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             } else if (jsonMessage.has(CLIENT_HEARTBEAT)) {
                 handleHeartbeat(callingSession);
             } else {
-                logger.info("Unknown type of message from session: {}", callingSession.getId());
+                logger.error("Unknown type of message from session: {}", callingSession.getId());
             }
         } catch (Exception e) {
             logger.error("Exception in handleTextMessage: {}", e.getMessage());
@@ -133,15 +133,14 @@ public class WebSocketServer extends TextWebSocketHandler {
                 pairedSession.close();
             }
 
-            sessions.remove(pairedSession);
-            sessions.remove(disconnectingSession);
+            removeSession(pairedSession);
+            removeSession(disconnectingSession);
             removePairFromPairs(disconnectingSession);
         } else {
-            sessions.remove(disconnectingSession);
+            removeSession(disconnectingSession);
             removeLonelyFromPairs(disconnectingSession);
         }
     }
-
 
     private WebSocketSession findPairedSession(WebSocketSession messagingSession) {
         for (Pair<WebSocketSession, WebSocketSession> pairedSession : pairedSessions) {
@@ -174,17 +173,25 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
+    private void addSession(WebSocketSession newSession) {
+        sessions.add(newSession);
+        sessionsLastHeartbeat.put(newSession, System.currentTimeMillis());
+    }
+
+    private void removeSession(WebSocketSession disconnectingSession) {
+        sessions.remove(disconnectingSession);
+        sessionsLastHeartbeat.remove(disconnectingSession);
+    }
+
     @Scheduled(fixedRate = 10000)
     void inactiveSessionsCleaner() {
         long currentTimestamp = System.currentTimeMillis();
         for (WebSocketSession session : sessionsLastHeartbeat.keySet()) {
-            long lastHeartbeat = sessionsLastHeartbeat.get(session);
+            Long lastHeartbeat = sessionsLastHeartbeat.get(session);
             if (currentTimestamp - lastHeartbeat > 35000 && session.isOpen()) {
                 try {
                     logger.info("Inactive session detected: {}, closing it...", session.getId());
-                    session.close(); // I saw it probably cause afterConnectionClose to be triggered, so maybe there removed paired sessions and inform paired session about closing it?
-                    sessions.remove(session);
-                    sessionsLastHeartbeat.remove(session);
+                    session.close(); // triggers afterConnectionClose() and in consequence handleDisconnection()
                 } catch (IOException e) {
                     logger.error("Exception in inactiveSessionsCleaner, during closing idle session with id: {}", session.getId());
                 }
