@@ -28,13 +28,17 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     private final List<Pair<WebSocketSession, WebSocketSession>> pairedSessions = new CopyOnWriteArrayList<>();
 
-    private final static String SERVER_MESSAGE_KEY = "serverMessage";
+    private final static String SERVER_MESSAGE = "serverMessage";
 
     private final static String SERVER_HEARTBEAT = "serverHeartbeat";
 
     private final static String SERVER_PAIRED_SESSION_DISCONNECTED = "serverPairedSessionDisconnected";
 
-    private final static String CLIENT_MESSAGE_KEY = "clientMessage";
+    private final static String SERVER_CLIENT_RECEIVED_MESSAGE_CONFIRMATION = "serverClientReceivedMessageConfirmation";
+
+    private final static String CLIENT_MESSAGE = "clientMessage";
+
+    private final static String CLIENT_RECEIVED_MESSAGE_CONFIRMATION = "clientReceivedMessageConfirmation";
 
     private final static String CLIENT_HEARTBEAT = "clientHeartbeat";
 
@@ -66,10 +70,12 @@ public class WebSocketServer extends TextWebSocketHandler {
         JSONObject jsonMessage = new JSONObject(message.getPayload());
 
         try {
-            if (jsonMessage.has(CLIENT_MESSAGE_KEY)) {
+            if (jsonMessage.has(CLIENT_MESSAGE)) {
                 handleMessageForwarding(callingSession, jsonMessage);
             } else if (jsonMessage.has(CLIENT_HEARTBEAT)) {
                 handleHeartbeat(callingSession);
+            } else if (jsonMessage.has(CLIENT_RECEIVED_MESSAGE_CONFIRMATION)) {
+                handleConfirmationForwarding(callingSession);
             } else {
                 logger.error("Unknown type of message from session: {}", callingSession.getId());
             }
@@ -80,16 +86,32 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
-        // TODO: I think this method could be used when f.e. session cannot send a message to it's paired counterpart, then we could try to implement
-        // retry policy of sending messages or something like that
+        logger.info("HandleTransportError triggered, session: {}", session.getId()); // for logging purposes to check when it is triggered, for the time being it's not clear for me
         logger.error("Exception in handleTransportError: {}", exception.getMessage());
+    }
+
+    @Scheduled(fixedRate = 30000)
+    void inactiveSessionsCleaner() {
+        long currentTimestamp = System.currentTimeMillis();
+        int requiredHeartbeatFrequencyInSeconds = 65;
+        for (WebSocketSession session : sessionsLastHeartbeat.keySet()) {
+            Long lastHeartbeat = sessionsLastHeartbeat.get(session);
+            if (currentTimestamp - lastHeartbeat > requiredHeartbeatFrequencyInSeconds * 1000 && session.isOpen()) {
+                try {
+                    logger.info("Inactive session detected: {}, closing it...", session.getId());
+                    session.close(); // triggers afterConnectionClose() and in consequence handleDisconnection()
+                } catch (IOException e) {
+                    logger.error("Exception in inactiveSessionsCleaner, during closing idle session with id: {}", session.getId());
+                }
+            }
+        }
     }
 
     private void handleSessionsPairing(WebSocketSession newSession) throws IOException {
         if (sessions.size() % 2 != 0) {
             pairedSessions.add(new Pair<>(newSession, null));
 
-            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE_KEY, "Successfully connected. Waiting for another player to join...");
+            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE, "Successfully connected. Waiting for another player to join...");
             newSession.sendMessage(new TextMessage(jsonMessage.toString()));
         } else {
             WebSocketSession lonelySession = pairedSessions.getLast().getValue0();
@@ -99,7 +121,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             JSONObject jsonMessageForLastSessionWithoutPair = new JSONObject().put("serverMessage", "Your opponent has connected. Let's the party started!");
             lonelySession.sendMessage(new TextMessage(jsonMessageForLastSessionWithoutPair.toString()));
 
-            JSONObject jsonMessageForNewSession = new JSONObject().put(SERVER_MESSAGE_KEY, "Successfully connected. Good luck!");
+            JSONObject jsonMessageForNewSession = new JSONObject().put(SERVER_MESSAGE, "Successfully connected. Good luck!");
             newSession.sendMessage(new TextMessage(jsonMessageForNewSession.toString()));
         }
 
@@ -115,11 +137,19 @@ public class WebSocketServer extends TextWebSocketHandler {
     private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject messageFromMessagingSession) throws IOException {
         WebSocketSession pairedSession = findPairedSession(messagingSession);
         if (pairedSession != null) {
-            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE_KEY, messageFromMessagingSession.getString("clientMessage"));
+            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE, messageFromMessagingSession.getString("clientMessage"));
             pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
         } else {
-            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE_KEY, "Please wait for the next player to join...");
+            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE, "Please wait for the next player to join...");
             messagingSession.sendMessage(new TextMessage(jsonMessage.toString()));
+        }
+    }
+
+    private void handleConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
+        WebSocketSession pairedSession = findPairedSession(messagingSession);
+        if (pairedSession != null) {
+            JSONObject jsonMessage = new JSONObject().put(SERVER_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok");
+            pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
         }
     }
 
@@ -181,21 +211,5 @@ public class WebSocketServer extends TextWebSocketHandler {
     private void removeSession(WebSocketSession disconnectingSession) {
         sessions.remove(disconnectingSession);
         sessionsLastHeartbeat.remove(disconnectingSession);
-    }
-
-    @Scheduled(fixedRate = 10000)
-    void inactiveSessionsCleaner() {
-        long currentTimestamp = System.currentTimeMillis();
-        for (WebSocketSession session : sessionsLastHeartbeat.keySet()) {
-            Long lastHeartbeat = sessionsLastHeartbeat.get(session);
-            if (currentTimestamp - lastHeartbeat > 35000 && session.isOpen()) {
-                try {
-                    logger.info("Inactive session detected: {}, closing it...", session.getId());
-                    session.close(); // triggers afterConnectionClose() and in consequence handleDisconnection()
-                } catch (IOException e) {
-                    logger.error("Exception in inactiveSessionsCleaner, during closing idle session with id: {}", session.getId());
-                }
-            }
-        }
     }
 }
