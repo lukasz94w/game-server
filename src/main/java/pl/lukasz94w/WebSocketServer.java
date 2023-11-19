@@ -18,28 +18,26 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
 
-import static pl.lukasz94w.JsonKey.*;
+import static pl.lukasz94w.JsonMessageKey.*;
 
 public class WebSocketServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
 
-    private final Set<WebSocketSession> sessions = new CopyOnWriteArraySet<>();
+    private final Set<WebSocketSession> activeSessions = new CopyOnWriteArraySet<>();
 
-    private final Map<WebSocketSession, Long> sessionsLastHeartbeat = new ConcurrentHashMap<>();
+    private final Map<WebSocketSession, Long> activeSessionsLastHeartbeat = new ConcurrentHashMap<>();
 
-    private final List<Pair<WebSocketSession, WebSocketSession>> pairedSessions = new CopyOnWriteArrayList<>();
+    private final List<Pair<WebSocketSession, WebSocketSession>> activePairedSessions = new CopyOnWriteArrayList<>();
+
+    private final Integer maximumNumberOfActiveSessions = 250;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        logger.info("Server connection opened with session id: {}", session.getId());
-        addSession(session);
-
-        try {
-            handleSessionsPairing(session);
-        } catch (Exception e) {
-            logger.error("Exception in afterConnectionEstablished: {}", e.getMessage());
-            removeSession(session);
+        if (activeSessions.size() < maximumNumberOfActiveSessions) {
+            acceptSession(session);
+        } else {
+            rejectSession(session);
         }
     }
 
@@ -83,8 +81,8 @@ public class WebSocketServer extends TextWebSocketHandler {
     void inactiveSessionsCleaner() {
         long currentTimestamp = System.currentTimeMillis();
         int requiredHeartbeatFrequencyInSeconds = 65;
-        for (WebSocketSession session : sessionsLastHeartbeat.keySet()) {
-            Long lastHeartbeat = sessionsLastHeartbeat.get(session);
+        for (WebSocketSession session : activeSessionsLastHeartbeat.keySet()) {
+            Long lastHeartbeat = activeSessionsLastHeartbeat.get(session);
             if (currentTimestamp - lastHeartbeat > requiredHeartbeatFrequencyInSeconds * 1000 && session.isOpen()) {
                 try {
                     logger.info("Inactive session detected: {}, closing it...", session.getId());
@@ -96,49 +94,74 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
+    private void acceptSession(WebSocketSession session) {
+        logger.info("Server connection opened with session id: {}", session.getId());
+        addSession(session);
+
+        try {
+            handleSessionsPairing(session);
+        } catch (Exception e) {
+            logger.error("Exception in acceptSession: {}", e.getMessage());
+            removeSession(session);
+        }
+    }
+
+    private void rejectSession(WebSocketSession session) {
+        try {
+            session.sendMessage(jsonMessage(SERVER_REJECTION_MESSAGE, "Maximum number of active sessions exceeded. Try again later"));
+
+            new Thread(() -> {
+                try {
+                    Thread.sleep(10000);
+
+                    // cleaning just in case rejected session haven't closed the session after 10 seconds since receiving rejection message
+                    if (session.isOpen()) {
+                        session.close();
+                    }
+                } catch (Exception e) {
+                    logger.error("Exception during closing the rejected session: {}", e.getMessage());
+                }
+
+            }).start();
+        } catch (Exception e) {
+            logger.error("Exception in rejectSession: {}", e.getMessage());
+        }
+    }
+
     private void handleSessionsPairing(WebSocketSession newSession) throws IOException {
-        if (sessions.size() % 2 != 0) {
-            pairedSessions.add(new Pair<>(newSession, null));
-
-            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE, "Successfully connected. Waiting for another player to join...");
-            newSession.sendMessage(new TextMessage(jsonMessage.toString()));
+        if (activeSessions.size() % 2 != 0) {
+            activePairedSessions.add(new Pair<>(newSession, null));
+            newSession.sendMessage(jsonMessage(SERVER_MESSAGE, "Successfully connected. Waiting for another player to join..."));
         } else {
-            WebSocketSession lonelySession = pairedSessions.getLast().getValue0();
-            pairedSessions.removeLast();
-            pairedSessions.add(new Pair<>(lonelySession, newSession));
+            WebSocketSession lonelySession = activePairedSessions.getLast().getValue0();
+            activePairedSessions.removeLast();
+            activePairedSessions.add(new Pair<>(lonelySession, newSession));
 
-            JSONObject jsonMessageForLastSessionWithoutPair = new JSONObject().put("serverMessage", "Your opponent has connected. Let's the party started!");
-            lonelySession.sendMessage(new TextMessage(jsonMessageForLastSessionWithoutPair.toString()));
-
-            JSONObject jsonMessageForNewSession = new JSONObject().put(SERVER_MESSAGE, "Successfully connected. Good luck!");
-            newSession.sendMessage(new TextMessage(jsonMessageForNewSession.toString()));
+            lonelySession.sendMessage(jsonMessage(SERVER_MESSAGE, "Your opponent has connected. Let's the party started!"));
+            newSession.sendMessage(jsonMessage(SERVER_MESSAGE, "Successfully connected. Good luck!"));
         }
 
-        logger.info("Summarize of current sessions: {}", pairedSessions);
+        logger.info("Summarize of current sessions: {}", activePairedSessions);
     }
 
     private void handleHeartbeat(WebSocketSession callingSession) throws IOException {
-        sessionsLastHeartbeat.put(callingSession, System.currentTimeMillis());
-        JSONObject jsonMessage = new JSONObject().put(SERVER_HEARTBEAT, System.currentTimeMillis());
-        callingSession.sendMessage(new TextMessage(jsonMessage.toString()));
+        activeSessionsLastHeartbeat.put(callingSession, System.currentTimeMillis());
+        callingSession.sendMessage(jsonMessage(SERVER_HEARTBEAT, String.valueOf(System.currentTimeMillis())));
     }
 
     private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject messageFromMessagingSession) throws IOException {
         WebSocketSession pairedSession = findPairedSession(messagingSession);
         if (pairedSession != null) {
-            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE, messageFromMessagingSession.getString("clientMessage"));
-            pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
+            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE, messageFromMessagingSession.getString(CLIENT_MESSAGE)));
         } else {
-            JSONObject jsonMessage = new JSONObject().put(SERVER_MESSAGE, "Please wait for the next player to join...");
-            messagingSession.sendMessage(new TextMessage(jsonMessage.toString()));
+            messagingSession.sendMessage(jsonMessage(SERVER_MESSAGE, "Please wait for the next player to join..."));
         }
     }
 
     private void handleConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
         WebSocketSession pairedSession = findPairedSession(messagingSession);
         if (pairedSession != null) {
-            JSONObject jsonMessage = new JSONObject().put(SERVER_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok");
-            pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
+            pairedSession.sendMessage(jsonMessage(SERVER_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok"));
         }
     }
 
@@ -147,8 +170,7 @@ public class WebSocketServer extends TextWebSocketHandler {
 
         if (pairedSession != null) {
             if (pairedSession.isOpen()) {
-                JSONObject jsonMessage = new JSONObject().put(SERVER_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected");
-                pairedSession.sendMessage(new TextMessage(jsonMessage.toString()));
+                pairedSession.sendMessage(jsonMessage(SERVER_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
                 pairedSession.close();
             }
 
@@ -162,7 +184,7 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private WebSocketSession findPairedSession(WebSocketSession messagingSession) {
-        for (Pair<WebSocketSession, WebSocketSession> pairedSession : pairedSessions) {
+        for (Pair<WebSocketSession, WebSocketSession> pairedSession : activePairedSessions) {
             if (pairedSession.getValue0() == messagingSession) {
                 return pairedSession.getValue1();
             }
@@ -175,30 +197,35 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private void removePairFromPairs(WebSocketSession disconnectingSession) {
-        for (Pair<WebSocketSession, WebSocketSession> pairedSession : pairedSessions) {
+        for (Pair<WebSocketSession, WebSocketSession> pairedSession : activePairedSessions) {
             if (pairedSession.getValue0() == disconnectingSession || pairedSession.getValue1() == disconnectingSession) {
-                pairedSessions.remove(pairedSession);
+                activePairedSessions.remove(pairedSession);
                 break;
             }
         }
     }
 
     private void removeLonelyFromPairs(WebSocketSession disconnectingSession) {
-        for (Pair<WebSocketSession, WebSocketSession> lonelySession : pairedSessions) {
+        for (Pair<WebSocketSession, WebSocketSession> lonelySession : activePairedSessions) {
             if (lonelySession.getValue0() == disconnectingSession) {
-                pairedSessions.remove(lonelySession);
+                activePairedSessions.remove(lonelySession);
                 break;
             }
         }
     }
 
     private void addSession(WebSocketSession newSession) {
-        sessions.add(newSession);
-        sessionsLastHeartbeat.put(newSession, System.currentTimeMillis());
+        activeSessions.add(newSession);
+        activeSessionsLastHeartbeat.put(newSession, System.currentTimeMillis());
     }
 
     private void removeSession(WebSocketSession disconnectingSession) {
-        sessions.remove(disconnectingSession);
-        sessionsLastHeartbeat.remove(disconnectingSession);
+        activeSessions.remove(disconnectingSession);
+        activeSessionsLastHeartbeat.remove(disconnectingSession);
+    }
+
+    private TextMessage jsonMessage(String messageKey, String messageValue) {
+        JSONObject jsonMessage = new JSONObject().put(messageKey, messageValue);
+        return new TextMessage(jsonMessage.toString());
     }
 }

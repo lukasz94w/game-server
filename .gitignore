@@ -32,3 +32,4 @@ bin/
 ### custom ignores ###
 game-server.iml
 .idea
+Application.log
