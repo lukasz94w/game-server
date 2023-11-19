@@ -18,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CopyOnWriteArraySet;
 
+import static pl.lukasz94w.JsonKey.*;
+
 public class WebSocketServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
@@ -28,20 +30,6 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     private final List<Pair<WebSocketSession, WebSocketSession>> pairedSessions = new CopyOnWriteArrayList<>();
 
-    private final static String SERVER_MESSAGE = "serverMessage";
-
-    private final static String SERVER_HEARTBEAT = "serverHeartbeat";
-
-    private final static String SERVER_PAIRED_SESSION_DISCONNECTED = "serverPairedSessionDisconnected";
-
-    private final static String SERVER_CLIENT_RECEIVED_MESSAGE_CONFIRMATION = "serverClientReceivedMessageConfirmation";
-
-    private final static String CLIENT_MESSAGE = "clientMessage";
-
-    private final static String CLIENT_RECEIVED_MESSAGE_CONFIRMATION = "clientReceivedMessageConfirmation";
-
-    private final static String CLIENT_HEARTBEAT = "clientHeartbeat";
-
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         logger.info("Server connection opened with session id: {}", session.getId());
@@ -51,6 +39,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             handleSessionsPairing(session);
         } catch (Exception e) {
             logger.error("Exception in afterConnectionEstablished: {}", e.getMessage());
+            removeSession(session);
         }
     }
 
