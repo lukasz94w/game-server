@@ -29,7 +29,7 @@ bin/
 ### Mac OS ###
 .DS_Store
 
-### custom ignores ###
+### Custom ###
 game-server.iml
 .idea
-Application.log
+game-server-core.log
