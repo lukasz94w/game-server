@@ -4,6 +4,7 @@ import org.javatuples.Pair;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -30,7 +31,8 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     private final List<Pair<WebSocketSession, WebSocketSession>> activePairedSessions = new CopyOnWriteArrayList<>();
 
-    private final Integer maximumNumberOfActiveSessions = 250;
+    @Value("${pl.lukasz94w.maximumNumberOfActiveSessions}")
+    private Integer maximumNumberOfActiveSessions;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
