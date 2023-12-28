@@ -1,4 +1,4 @@
-package pl.lukasz94w.security;
+package pl.lukasz94w.filter;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletResponse;
@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 
+// Here are the headers set which browser requires during CORS
+// communication, so it can proceed with the requests sent to the backend.
 public class CorsFilter implements Filter {
 
     @Override
