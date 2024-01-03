@@ -61,7 +61,7 @@ public class SecurityConfig {
         // This method should be permitted for all because only then browser will try to access protected endpoints.
         // To understand it better read about preflight requests.
         http.authorizeHttpRequests(requests -> requests
-                .requestMatchers(HttpMethod.OPTIONS, "/api/v1/auth/sign-in").permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/api/v1/auth/signIn").permitAll()
                 .anyRequest().authenticated());
 
         // This was another proposition to deal with preflight request but for some reason

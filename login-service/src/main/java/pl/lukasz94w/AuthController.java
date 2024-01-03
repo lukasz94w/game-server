@@ -9,12 +9,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("api/v1/auth")
 public class AuthController {
 
-    @GetMapping("/sign-in")
+    // basically it should be POST request...
+    @GetMapping("/signIn")
     public String signIn() {
         return "Successfully logged in!";
     }
 
-    @GetMapping("/verify")
+    @GetMapping("/verifySignedIn")
     public String verifySignedIn(HttpSession httpSession) {
         return "Valid user (active session id: " + httpSession.getId() + ")";
     }
