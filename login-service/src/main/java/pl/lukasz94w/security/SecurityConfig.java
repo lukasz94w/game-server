@@ -78,7 +78,7 @@ public class SecurityConfig {
         // for me (I was getting 403 status when trying to send request on the following url: /api/v1/auth/logout.
         // Here are the leftovers of the method triggerred by POST request: .logoutUrl("/api/v1/auth/logout").
         http.logout(logout -> logout
-                .logoutRequestMatcher(new AntPathRequestMatcher("/api/v1/auth/logout", "GET"))
+                .logoutRequestMatcher(new AntPathRequestMatcher("/api/v1/auth/signOut", "GET"))
                 .addLogoutHandler(customLogoutHandler())
                 .logoutSuccessHandler(httpStatusReturningLogoutSuccessHandler())
         );
