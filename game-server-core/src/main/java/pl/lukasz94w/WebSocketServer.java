@@ -5,7 +5,10 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -36,10 +39,12 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        if (activeSessions.size() < maximumNumberOfActiveSessions) {
-            acceptSession(session);
+        if (activeSessions.size() >= maximumNumberOfActiveSessions) {
+            rejectSession(session, "Maximum number of active sessions exceeded. Try again later");
+        } else if (!checkWhetherUserAuthenticated(session.getHandshakeHeaders())) {
+            rejectSession(session, "User unauthenticated");
         } else {
-            rejectSession(session);
+            acceptSession(session);
         }
     }
 
@@ -96,6 +101,38 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
+    private boolean checkWhetherUserAuthenticated(HttpHeaders handshakeHeaders) {
+        // catch original request containing session cookie and send it to validation
+        // endpoint to check whether the session exist for sent cookie
+        HttpEntity<String> httpEntity = new HttpEntity<>(removeWebSocketHeaders(handshakeHeaders));
+
+        ResponseEntity<String> responseEntity;
+        try {
+            responseEntity = new RestTemplate().exchange("http://localhost:8093/api/v1/auth/verifySignedIn", HttpMethod.GET, httpEntity, String.class);
+        } catch (HttpClientErrorException e) {
+            logger.info("Unauthorized attempt of connection"); // ip address could be added here (passed from handshake interceptor f.e.)
+            return false;
+        }
+
+        HttpStatusCode responseStatusCode = responseEntity.getStatusCode();
+        assert (responseStatusCode.equals(HttpStatus.OK));
+        String cookie = handshakeHeaders.getFirst("cookie");
+        logger.info("Request successfully validated for cookie: {}. Response status: {}", cookie, responseStatusCode);
+        return true;
+    }
+
+    // Method which removes WebSocket typical headers. Because request is send to http endpoint (not WebSocket endpoint) it's good
+    // practice to remove original WebSocket headers which were received from the WebSocket client. Note: I tested and the 200 HTTP
+    // status is sent back even if these headers are not used (of course session cookie must be valid).
+    private HttpHeaders removeWebSocketHeaders(HttpHeaders originalHeaders) {
+        List<String> webSocketHeaders = List.of("connection", "upgrade", "sec-websocket-version", "sec-websocket-key", "sec-websocket-extensions");
+
+        HttpHeaders writableHttpHeaders = HttpHeaders.writableHttpHeaders(originalHeaders);
+        webSocketHeaders.forEach(writableHttpHeaders::remove);
+
+        return originalHeaders;
+    }
+
     private void acceptSession(WebSocketSession session) {
         logger.info("Server connection opened with session id: {}", session.getId());
         addSession(session);
@@ -108,9 +145,9 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
-    private void rejectSession(WebSocketSession session) {
+    private void rejectSession(WebSocketSession session, String rejectionReason) {
         try {
-            session.sendMessage(jsonMessage(SERVER_REJECTION_MESSAGE, "Maximum number of active sessions exceeded. Try again later"));
+            session.sendMessage(jsonMessage(SERVER_REJECTION_MESSAGE, rejectionReason));
 
             new Thread(() -> {
                 try {

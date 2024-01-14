@@ -17,7 +17,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(webSocketHandler(), "/websocket")
                 .setAllowedOrigins("http://localhost:3000")
                 .withSockJS()
-                .setInterceptors(handshakeInterceptor())
+//                .setInterceptors(handshakeInterceptor())
                 .setWebSocketEnabled(true)
                 .setHeartbeatTime(25000)
                 .setDisconnectDelay(5000)
@@ -32,6 +32,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public HandshakeInterceptor handshakeInterceptor() {
-        return new CustomHandshakeInterceptor();
+        return new AuthenticationHandshakeInterceptor();
     }
 }
