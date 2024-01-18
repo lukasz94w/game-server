@@ -66,9 +66,9 @@ public class Game {
 
                 if (valueA.equals(valueB) && valueA.equals(valueC)) {
                     if (valueA.equals("X")) {
-                        return State.X_WON;
+                        return State.FIRST_PLAYER_X_WON;
                     } else {
-                        return State.O_WON;
+                        return State.SECOND_PLAYER_O_WON;
                     }
                 }
             }
@@ -83,8 +83,8 @@ public class Game {
 
     public enum State {
         UNRESOLVED(""),
-        X_WON("1st player won"),
-        O_WON("2nd player won"),
+        FIRST_PLAYER_X_WON("1st player won"),
+        SECOND_PLAYER_O_WON("2nd player won"),
         DRAW("Draw");
 
         private final String message;

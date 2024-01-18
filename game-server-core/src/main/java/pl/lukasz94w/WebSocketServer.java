@@ -75,7 +75,9 @@ public class WebSocketServer extends TextWebSocketHandler {
             } else if (jsonMessage.has(CLIENT_SESSION_STATUS_UPDATE_HEARTBEAT)) {
                 handleHeartbeat(session);
             } else if (jsonMessage.has(CLIENT_MESSAGE_RECEIVED_MESSAGE_CONFIRMATION)) {
-                handleConfirmationForwarding(session);
+                handleMessageConfirmationForwarding(session);
+            } else if (jsonMessage.has(CLIENT_MESSAGE_RECEIVED_GAME_STATUS_UPDATE_CONFIRMATION)) {
+                handleGameStatusUpdateConfirmationForwarding(session);
             } else {
                 logger.error("Unknown type of message from session: {}", session.getId());
             }
@@ -200,13 +202,13 @@ public class WebSocketServer extends TextWebSocketHandler {
         Game.State state = currentGame.determineGameState();
 
         switch (state) {
-            case X_WON -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.X_WON.getMessage()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.X_WON.getMessage()));
+            case FIRST_PLAYER_X_WON -> {
+                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.FIRST_PLAYER_X_WON.getMessage()));
+                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.FIRST_PLAYER_X_WON.getMessage()));
             }
-            case O_WON -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.O_WON.getMessage()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.O_WON.getMessage()));
+            case SECOND_PLAYER_O_WON -> {
+                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.SECOND_PLAYER_O_WON.getMessage()));
+                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.SECOND_PLAYER_O_WON.getMessage()));
             }
             case DRAW -> {
                 session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.DRAW.getMessage()));
@@ -237,10 +239,17 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
-    private void handleConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
+    private void handleMessageConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
         WebSocketSession pairedSession = findPairedSession(messagingSession);
         if (pairedSession != null) {
             pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok"));
+        }
+    }
+
+    private void handleGameStatusUpdateConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
+        WebSocketSession pairedSession = findPairedSession(messagingSession);
+        if (pairedSession != null) {
+            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
         }
     }
 
