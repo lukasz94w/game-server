@@ -20,10 +20,8 @@ import pl.lukasz94w.game.GameFactory;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
 
 import static pl.lukasz94w.message.Client.*;
 import static pl.lukasz94w.message.Server.*;
@@ -32,20 +30,18 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
 
-    private final Set<WebSocketSession> activeSessions = new CopyOnWriteArraySet<>();
-
     private final Map<WebSocketSession, Long> activeSessionsLastHeartbeat = new ConcurrentHashMap<>();
 
     private final List<Triplet<WebSocketSession, WebSocketSession, Game>> activeGames = new CopyOnWriteArrayList<>();
 
-    @Value("${pl.lukasz94w.maximumNumberOfActiveSessions}")
-    private Integer maximumNumberOfActiveSessions;
+    @Value("${pl.lukasz94w.maximumNumberOfGames}")
+    private Integer maximumNumberOfGames;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        if (activeSessions.size() >= maximumNumberOfActiveSessions) {
+        if (activeGames.size() >= maximumNumberOfGames) {
             rejectSession(session, "Maximum number of active sessions exceeded. Try again later");
-        } else if (!checkWhetherUserAuthenticated(session.getHandshakeHeaders())) {
+        } else if (!checkAuthentication(session.getHandshakeHeaders())) {
             rejectSession(session, "User unauthenticated");
         } else {
             acceptSession(session);
@@ -109,7 +105,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
-    private boolean checkWhetherUserAuthenticated(HttpHeaders handshakeHeaders) {
+    private boolean checkAuthentication(HttpHeaders handshakeHeaders) {
         // catch original request containing session cookie and send it to validation
         // endpoint to check whether the session exist for sent cookie
         HttpEntity<String> httpEntity = new HttpEntity<>(removeWebSocketHeaders(handshakeHeaders));
@@ -138,7 +134,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         HttpHeaders writableHttpHeaders = HttpHeaders.writableHttpHeaders(originalHeaders);
         webSocketHeaders.forEach(writableHttpHeaders::remove);
 
-        return originalHeaders;
+        return writableHttpHeaders;
     }
 
     private void acceptSession(WebSocketSession session) {
@@ -176,18 +172,22 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private void handleSessionsPairing(WebSocketSession newSession) throws IOException {
-        if (activeSessions.size() % 2 != 0) {
-            activeGames.add(new Triplet<>(newSession, null, null));
-        } else {
+        if (isLonelySession()) {
             WebSocketSession lonelySession = activeGames.getLast().getValue0();
             activeGames.removeLast();
-            activeGames.add(new Triplet<>(lonelySession, newSession, GameFactory.getInstance()));
+            activeGames.add(new Triplet<>(lonelySession, newSession, GameFactory.createNewGame()));
 
             lonelySession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "1st player"));
             newSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "2nd player"));
+        } else {
+            activeGames.add(new Triplet<>(newSession, null, null));
         }
 
         logger.info("Summarize of current sessions: {}", activeGames);
+    }
+
+    private boolean isLonelySession() {
+        return activeGames.getLast().getValue1() == null;
     }
 
     private void handleGameUpdate(WebSocketSession session, JSONObject jsonMessage) throws IOException {
@@ -202,17 +202,17 @@ public class WebSocketServer extends TextWebSocketHandler {
         Game.State state = currentGame.determineGameState();
 
         switch (state) {
-            case FIRST_PLAYER_X_WON -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.FIRST_PLAYER_X_WON.getMessage()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.FIRST_PLAYER_X_WON.getMessage()));
+            case FIRST_PLAYER_WON -> {
+                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.FIRST_PLAYER_WON.message()));
+                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.FIRST_PLAYER_WON.message()));
             }
-            case SECOND_PLAYER_O_WON -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.SECOND_PLAYER_O_WON.getMessage()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.SECOND_PLAYER_O_WON.getMessage()));
+            case SECOND_PLAYER_WON -> {
+                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.SECOND_PLAYER_WON.message()));
+                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.SECOND_PLAYER_WON.message()));
             }
-            case DRAW -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.DRAW.getMessage()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.DRAW.getMessage()));
+            case UNRESOLVED -> {
+                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.UNRESOLVED.message()));
+                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Game.State.UNRESOLVED.message()));
             }
         }
     }
@@ -232,10 +232,10 @@ public class WebSocketServer extends TextWebSocketHandler {
         callingSession.sendMessage(jsonMessage(SERVER_SESSION_STATUS_UPDATE_HEARTBEAT, String.valueOf(System.currentTimeMillis())));
     }
 
-    private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject messageFromMessagingSession) throws IOException {
+    private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject message) throws IOException {
         WebSocketSession pairedSession = findPairedSession(messagingSession);
         if (pairedSession != null) {
-            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_NEW_MESSAGE, messageFromMessagingSession.getString(CLIENT_MESSAGE_NEW_MESSAGE)));
+            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_NEW_MESSAGE, message.getString(CLIENT_MESSAGE_NEW_MESSAGE)));
         }
     }
 
@@ -262,53 +262,51 @@ public class WebSocketServer extends TextWebSocketHandler {
                 pairedSession.close();
             }
 
-            removeSession(pairedSession);
             removeSession(disconnectingSession);
-            removePairFromPairs(disconnectingSession);
+            removeSession(pairedSession);
+            removeActiveGame(disconnectingSession);
         } else {
             removeSession(disconnectingSession);
-            removeLonelyFromPairs(disconnectingSession);
+            removeLonelyFromGames(disconnectingSession);
         }
     }
 
     private WebSocketSession findPairedSession(WebSocketSession messagingSession) {
-        for (Triplet<WebSocketSession, WebSocketSession, Game> pairedSession : activeGames) {
-            if (pairedSession.getValue0() == messagingSession) {
-                return pairedSession.getValue1();
+        for (Triplet<WebSocketSession, WebSocketSession, Game> activeGame : activeGames) {
+            if (activeGame.getValue0() == messagingSession) {
+                return activeGame.getValue1();
             }
-            if (pairedSession.getValue1() == messagingSession) {
-                return pairedSession.getValue0();
+            if (activeGame.getValue1() == messagingSession) {
+                return activeGame.getValue0();
             }
         }
 
         return null;
     }
 
-    private void removePairFromPairs(WebSocketSession disconnectingSession) {
-        for (Triplet<WebSocketSession, WebSocketSession, Game> pairedSession : activeGames) {
-            if (pairedSession.getValue0() == disconnectingSession || pairedSession.getValue1() == disconnectingSession) {
-                activeGames.remove(pairedSession);
+    private void removeActiveGame(WebSocketSession disconnectingSession) {
+        for (Triplet<WebSocketSession, WebSocketSession, Game> activeGame : activeGames) {
+            if (activeGame.getValue0() == disconnectingSession || activeGame.getValue1() == disconnectingSession) {
+                activeGames.remove(activeGame);
                 break;
             }
         }
     }
 
-    private void removeLonelyFromPairs(WebSocketSession disconnectingSession) {
-        for (Triplet<WebSocketSession, WebSocketSession, Game> lonelySession : activeGames) {
-            if (lonelySession.getValue0() == disconnectingSession) {
-                activeGames.remove(lonelySession);
+    private void removeLonelyFromGames(WebSocketSession disconnectingSession) {
+        for (Triplet<WebSocketSession, WebSocketSession, Game> activeGame : activeGames) {
+            if (activeGame.getValue0() == disconnectingSession) {
+                activeGames.remove(activeGame);
                 break;
             }
         }
     }
 
     private void addSession(WebSocketSession newSession) {
-        activeSessions.add(newSession);
         activeSessionsLastHeartbeat.put(newSession, System.currentTimeMillis());
     }
 
     private void removeSession(WebSocketSession disconnectingSession) {
-        activeSessions.remove(disconnectingSession);
         activeSessionsLastHeartbeat.remove(disconnectingSession);
     }
 

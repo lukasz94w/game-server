@@ -2,9 +2,10 @@ package pl.lukasz94w.game;
 
 public class GameFactory {
 
-    private GameFactory() {}
+    private GameFactory() {
+    }
 
-    public static Game getInstance() {
+    public static Game createNewGame() {
         return new Game();
     }
 }

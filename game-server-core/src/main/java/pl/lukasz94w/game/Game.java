@@ -1,15 +1,16 @@
 package pl.lukasz94w.game;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
 public class Game {
+
+    private static int totalGameNumber;
     private final Map<Integer, String> boardState;
 
     Game() {
         boardState = new HashMap<>();
+        totalGameNumber++;
     }
 
     // there could be also implemented features like tracking the actual player turn
@@ -53,7 +54,6 @@ public class Game {
                 {2, 4, 6}
         };
 
-        // Check for a winner
         for (int[] combination : winningCombinations) {
             int a = combination[0];
             int b = combination[1];
@@ -66,26 +66,26 @@ public class Game {
 
                 if (valueA.equals(valueB) && valueA.equals(valueC)) {
                     if (valueA.equals("X")) {
-                        return State.FIRST_PLAYER_X_WON;
+                        return State.FIRST_PLAYER_WON;
                     } else {
-                        return State.SECOND_PLAYER_O_WON;
+                        return State.SECOND_PLAYER_WON;
                     }
                 }
             }
         }
 
         if (boardState.size() == 9) {
-            return State.DRAW;
+            return State.UNRESOLVED;
         }
 
-        return State.UNRESOLVED;
+        return State.ONGOING;
     }
 
     public enum State {
-        UNRESOLVED(""),
-        FIRST_PLAYER_X_WON("1st player won"),
-        SECOND_PLAYER_O_WON("2nd player won"),
-        DRAW("Draw");
+        ONGOING(""),
+        FIRST_PLAYER_WON("1st player won"),
+        SECOND_PLAYER_WON("2nd player won"),
+        UNRESOLVED("Unresolved");
 
         private final String message;
 
@@ -93,13 +93,13 @@ public class Game {
             this.message = message;
         }
 
-        public String getMessage() {
+        public String message() {
             return message;
         }
     }
 
     @Override
     public String toString() {
-        return "New game, started point at: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"));
+        return "New game started, total number: " + totalGameNumber;
     }
 }
