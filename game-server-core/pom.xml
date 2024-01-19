@@ -11,7 +11,7 @@
 
     <artifactId>game-server-core</artifactId>
 
-<!--    it can be put in parent pom.xml when the tests will be present in all the modules...-->
+    <!--    it can be put in parent pom.xml when the tests will be present in all the modules...-->
     <build>
         <plugins>
             <plugin>
