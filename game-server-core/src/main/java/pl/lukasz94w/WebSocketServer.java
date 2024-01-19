@@ -1,5 +1,6 @@
 package pl.lukasz94w;
 
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.javatuples.Triplet;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -30,7 +31,7 @@ public class WebSocketServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
 
-    private final Map<WebSocketSession, Long> activeSessionsLastHeartbeat = new ConcurrentHashMap<>();
+    private final Map<WebSocketSession, Long> sessionsLastHeartbeat = new ConcurrentHashMap<>();
 
     private final List<Triplet<WebSocketSession, WebSocketSession, Game>> activeGames = new CopyOnWriteArrayList<>();
 
@@ -55,7 +56,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         try {
             handleDisconnection(disconnectingSession);
         } catch (Exception e) {
-            logger.error("Exception in afterConnectionClosed: {}", e.getMessage());
+            logger.error("Exception in afterConnectionClosed: {}", ExceptionUtils.getStackTrace(e));
         }
     }
 
@@ -78,22 +79,22 @@ public class WebSocketServer extends TextWebSocketHandler {
                 logger.error("Unknown type of message from session: {}", session.getId());
             }
         } catch (Exception e) {
-            logger.error("Exception in handleTextMessage: {}", e.getMessage());
+            logger.error("Exception in handleTextMessage: {}", ExceptionUtils.getStackTrace(e));
         }
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         logger.info("HandleTransportError triggered, session: {}", session.getId()); // for logging purposes to check when it is triggered, for the time being it's not clear for me
-        logger.error("Exception in handleTransportError: {}", exception.getMessage());
+        logger.error("Exception in handleTransportError: {}", ExceptionUtils.getStackTrace(exception));
     }
 
     @Scheduled(fixedRate = 30000)
     void inactiveSessionsCleaner() {
         long currentTimestamp = System.currentTimeMillis();
         int requiredHeartbeatFrequencyInSeconds = 65;
-        for (WebSocketSession session : activeSessionsLastHeartbeat.keySet()) {
-            Long lastHeartbeat = activeSessionsLastHeartbeat.get(session);
+        for (WebSocketSession session : sessionsLastHeartbeat.keySet()) {
+            Long lastHeartbeat = sessionsLastHeartbeat.get(session);
             if (currentTimestamp - lastHeartbeat > requiredHeartbeatFrequencyInSeconds * 1000 && session.isOpen()) {
                 try {
                     logger.info("Inactive session detected: {}, closing it...", session.getId());
@@ -144,7 +145,7 @@ public class WebSocketServer extends TextWebSocketHandler {
         try {
             handleSessionsPairing(session);
         } catch (Exception e) {
-            logger.error("Exception in acceptSession: {}", e.getMessage());
+            logger.error("Exception in acceptSession: {}", ExceptionUtils.getStackTrace(e));
             removeSession(session);
         }
     }
@@ -162,12 +163,12 @@ public class WebSocketServer extends TextWebSocketHandler {
                         session.close();
                     }
                 } catch (Exception e) {
-                    logger.error("Exception during closing the rejected session: {}", e.getMessage());
+                    logger.error("Exception during closing the rejected session: {}", ExceptionUtils.getStackTrace(e));
                 }
 
             }).start();
         } catch (Exception e) {
-            logger.error("Exception in rejectSession: {}", e.getMessage());
+            logger.error("Exception in rejectSession: {}", ExceptionUtils.getStackTrace(e));
         }
     }
 
@@ -187,7 +188,11 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private boolean isLonelySession() {
-        return activeGames.getLast().getValue1() == null;
+        if (activeGames.isEmpty()) {
+            return false;
+        } else {
+            return activeGames.getLast().getValue1() == null;
+        }
     }
 
     private void handleGameUpdate(WebSocketSession session, JSONObject jsonMessage) throws IOException {
@@ -228,7 +233,7 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private void handleHeartbeat(WebSocketSession callingSession) throws IOException {
-        activeSessionsLastHeartbeat.put(callingSession, System.currentTimeMillis());
+        sessionsLastHeartbeat.put(callingSession, System.currentTimeMillis());
         callingSession.sendMessage(jsonMessage(SERVER_SESSION_STATUS_UPDATE_HEARTBEAT, String.valueOf(System.currentTimeMillis())));
     }
 
@@ -303,11 +308,11 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private void addSession(WebSocketSession newSession) {
-        activeSessionsLastHeartbeat.put(newSession, System.currentTimeMillis());
+        sessionsLastHeartbeat.put(newSession, System.currentTimeMillis());
     }
 
     private void removeSession(WebSocketSession disconnectingSession) {
-        activeSessionsLastHeartbeat.remove(disconnectingSession);
+        sessionsLastHeartbeat.remove(disconnectingSession);
     }
 
     private TextMessage jsonMessage(String messageKey, String messageValue) {
