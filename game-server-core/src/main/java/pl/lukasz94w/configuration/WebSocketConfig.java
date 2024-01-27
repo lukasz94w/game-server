@@ -1,4 +1,4 @@
-package pl.lukasz94w;
+package pl.lukasz94w.configuration;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -7,10 +7,18 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
+import pl.lukasz94w.WebSocketServer;
+import pl.lukasz94w.interceptor.AuthenticationHandshakeInterceptor;
 
 @Configuration
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final WebSocketServerConfig webSocketServerConfig;
+
+    public WebSocketConfig(WebSocketServerConfig webSocketServerConfig) {
+        this.webSocketServerConfig = webSocketServerConfig;
+    }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
@@ -27,7 +35,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public WebSocketHandler webSocketHandler() {
-        return new WebSocketServer();
+        return new WebSocketServer(webSocketServerConfig);
     }
 
     @Bean

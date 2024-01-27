@@ -1,4 +1,4 @@
-package pl.lukasz94w;
+package pl.lukasz94w.interceptor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +9,7 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
+import pl.lukasz94w.WebSocketServer;
 
 import java.util.List;
 import java.util.Map;

@@ -15,7 +15,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>game-server-core</module>
-        <module>login-service</module>
+        <module>auth-service</module>
     </modules>
 
     <dependencyManagement>
