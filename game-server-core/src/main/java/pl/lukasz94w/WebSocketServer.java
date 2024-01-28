@@ -13,7 +13,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import pl.lukasz94w.configuration.WebSocketServerConfig;
-import pl.lukasz94w.exception.TictactoeException;
+import pl.lukasz94w.exception.GameException;
 import pl.lukasz94w.game.Game;
 import pl.lukasz94w.game.GameFactory;
 import pl.lukasz94w.player.Player;
@@ -23,7 +23,6 @@ import pl.lukasz94w.tictactoe.Tictactoe;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
 
@@ -114,9 +113,9 @@ public class WebSocketServer extends TextWebSocketHandler {
                 });
     }
 
-    private void acceptSession(WebSocketSession session, String sessionCookie) {
+    private void acceptSession(WebSocketSession session, String authCookie) {
         try {
-            handleSessionsPairing(session, sessionCookie);
+            handlePlayersPairing(session, authCookie);
         } catch (Exception e) {
             logger.error("Exception in acceptSession: {}", ExceptionUtils.getStackTrace(e));
         }
@@ -148,14 +147,14 @@ public class WebSocketServer extends TextWebSocketHandler {
         }
     }
 
-    private void handleSessionsPairing(WebSocketSession session, String sessionCookie) throws IOException {
+    private void handlePlayersPairing(WebSocketSession session, String authCookie) throws IOException {
         if (isGameWithLonelyPlayer()) {
-            Game gameWithLonelySession = games.getLast();
-            gameWithLonelySession.attachSecondPlayer(PlayerFactory.createPlayer(session, sessionCookie));
-            gameWithLonelySession.getFirstPlayer().getSession().sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "1st player"));
+            Game gameWithLonelyPlayer = games.getLast();
+            gameWithLonelyPlayer.attachSecondPlayer(PlayerFactory.createPlayer(session, authCookie));
+            gameWithLonelyPlayer.getFirstPlayer().getSession().sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "1st player"));
             session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "2nd player"));
         } else {
-            games.add(GameFactory.createGame(PlayerFactory.createPlayer(session, sessionCookie)));
+            games.add(GameFactory.createGame(PlayerFactory.createPlayer(session, authCookie)));
         }
     }
 
@@ -168,11 +167,12 @@ public class WebSocketServer extends TextWebSocketHandler {
     }
 
     private void handleDisconnection(WebSocketSession disconnectingSession) throws IOException {
-        WebSocketSession pairedSession = findPairedSession(disconnectingSession);
+        Player opponent = findOpponent(disconnectingSession);
+        WebSocketSession opponentSession = opponent.getSession();
 
-        if (pairedSession != null && pairedSession.isOpen()) {
-            pairedSession.sendMessage(jsonMessage(SERVER_SESSION_STATUS_UPDATE_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
-            pairedSession.close();
+        if (!(opponent instanceof PlayerHolder) && opponentSession.isOpen()) {
+            opponentSession.sendMessage(jsonMessage(SERVER_SESSION_STATUS_UPDATE_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
+            opponentSession.close();
         }
 
         removeGame(disconnectingSession);
@@ -182,35 +182,35 @@ public class WebSocketServer extends TextWebSocketHandler {
         String clientChosenSquareValue = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_VALUE);
         String clientChosenSquareNumber = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_NUMBER);
 
-        WebSocketSession pairedSession = findPairedSession(session);
-        pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_STATUS, clientChosenSquareNumber));
+        WebSocketSession opponentSession = findOpponent(session).getSession();
+        opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_STATUS, clientChosenSquareNumber));
 
-        Tictactoe currentTictactoe = findRelatedTictactoe(session);
-        currentTictactoe.updateState(clientChosenSquareNumber, clientChosenSquareValue);
-        Tictactoe.State state = currentTictactoe.determineTictactoeState();
+        Tictactoe tictactoe = findRelatedTictactoe(session);
+        tictactoe.updateState(clientChosenSquareNumber, clientChosenSquareValue);
+        Tictactoe.State state = tictactoe.determineNewTictactoeState();
 
         switch (state) {
             case FIRST_PLAYER_WON -> {
                 session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
+                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
             }
             case SECOND_PLAYER_WON -> {
                 session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
+                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
             }
             case UNRESOLVED -> {
                 session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
-                pairedSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
+                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
             }
         }
     }
 
-    private WebSocketSession findPairedSession(WebSocketSession messagingSession) {
+    private Player findOpponent(WebSocketSession messagingSession) {
         return games.stream()
-                .filter(game -> Objects.equals(messagingSession, game.getFirstPlayer().getSession()) || messagingSession.equals(game.getSecondPlayer().getSession()))
-                .map(game -> messagingSession.equals(game.getFirstPlayer().getSession()) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession())
+                .filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession))
+                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer() : game.getFirstPlayer())
                 .findFirst()
-                .orElse(null);
+                .orElseThrow(() -> new GameException("No opponent found"));
     }
 
     private Tictactoe findRelatedTictactoe(WebSocketSession session) {
@@ -218,7 +218,7 @@ public class WebSocketServer extends TextWebSocketHandler {
                 .filter(game -> game.getFirstPlayer().getSession().equals(session) || game.getSecondPlayer().getSession().equals(session))
                 .map(Game::getTictactoe)
                 .findFirst()
-                .orElseThrow(() -> new TictactoeException("No Tictactoe game found for the session: " + session.getId()));
+                .orElseThrow(() -> new GameException("No Tictactoe game found for the session: " + session.getId()));
     }
 
     private void handleHeartbeat(WebSocketSession callingSession) throws IOException {
@@ -226,30 +226,30 @@ public class WebSocketServer extends TextWebSocketHandler {
                 .filter(game -> game.getFirstPlayer().getSession().equals(callingSession) || game.getSecondPlayer().getSession().equals(callingSession))
                 .map(game -> game.getFirstPlayer().getSession().equals(callingSession) ? game.getFirstPlayer() : game.getSecondPlayer())
                 .findFirst()
-                .orElseThrow(() -> new TictactoeException("No related session found"));
+                .orElseThrow(() -> new GameException("No related session found"));
 
         sessionRelatedPlayer.updateLastHeartbeat();
         callingSession.sendMessage(jsonMessage(SERVER_SESSION_STATUS_UPDATE_HEARTBEAT, String.valueOf(System.currentTimeMillis())));
     }
 
     private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject message) throws IOException {
-        WebSocketSession pairedSession = findPairedSession(messagingSession);
-        if (pairedSession != null) {
-            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_NEW_MESSAGE, message.getString(CLIENT_MESSAGE_NEW_MESSAGE)));
+        Player opponent = findOpponent(messagingSession);
+        if (!(opponent instanceof PlayerHolder)) {
+            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_NEW_MESSAGE, message.getString(CLIENT_MESSAGE_NEW_MESSAGE)));
         }
     }
 
     private void handleMessageConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
-        WebSocketSession pairedSession = findPairedSession(messagingSession);
-        if (pairedSession != null) {
-            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok"));
+        Player opponent = findOpponent(messagingSession);
+        if (!(opponent instanceof PlayerHolder)) {
+            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok"));
         }
     }
 
     private void handleGameStatusUpdateConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
-        WebSocketSession pairedSession = findPairedSession(messagingSession);
-        if (pairedSession != null) {
-            pairedSession.sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
+        Player opponent = findOpponent(messagingSession);
+        if (!(opponent instanceof PlayerHolder)) {
+            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
         }
     }
 

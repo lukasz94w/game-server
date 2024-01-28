@@ -12,8 +12,8 @@ public class Game {
 
     Game(Player firstPlayer) {
         this.firstPlayer = firstPlayer;
+        this.secondPlayer = PlayerFactory.createPlayerHolder(); // prevents throwing null pointer exceptions when iterating over games list
         this.tictactoe = TictactoeFactory.createTictactoe();
-        this.secondPlayer = PlayerFactory.createPlayerHolder();
     }
 
     public void attachSecondPlayer(Player secondPlayer) {

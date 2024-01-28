@@ -14,8 +14,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-// class which prevents throwing null pointer exceptions when iterating
-// over games list (streams), when there is a game with only one player
 public class PlayerHolder extends Player {
     private static final WebSocketSession webSocketSessionHolder = new WebSocketSessionHolder();
 

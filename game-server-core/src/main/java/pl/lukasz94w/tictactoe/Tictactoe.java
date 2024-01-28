@@ -44,7 +44,7 @@ public class Tictactoe {
         }
     }
 
-    public State determineTictactoeState() {
+    public State determineNewTictactoeState() {
         int[][] winningCombinations = {
                 {0, 1, 2},
                 {3, 4, 5},
