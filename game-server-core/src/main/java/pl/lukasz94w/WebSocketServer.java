@@ -73,16 +73,14 @@ public class WebSocketServer extends TextWebSocketHandler {
         JSONObject jsonMessage = new JSONObject(message.getPayload());
 
         try {
-            if (jsonMessage.has(CLIENT_MESSAGE_NEW_MESSAGE)) {
-                handleMessageForwarding(session, jsonMessage);
-            } else if (jsonMessage.has(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_NUMBER)) {
-                handleGameUpdate(session, jsonMessage);
+            if (jsonMessage.has(CLIENT_MESSAGE_PLAYER_MESSAGE)) {
+                forwardMessageToOpponent(session, jsonMessage);
+            } else if (jsonMessage.has(CLIENT_GAME_UPDATE_GAME_CHANGED)) {
+                forwardGameUpdateToOpponent(session, jsonMessage);
             } else if (jsonMessage.has(CLIENT_SESSION_STATUS_UPDATE_HEARTBEAT)) {
                 handleHeartbeat(session);
-            } else if (jsonMessage.has(CLIENT_MESSAGE_RECEIVED_MESSAGE_CONFIRMATION)) {
-                handleMessageConfirmationForwarding(session);
-            } else if (jsonMessage.has(CLIENT_MESSAGE_RECEIVED_GAME_STATUS_UPDATE_CONFIRMATION)) {
-                handleGameStatusUpdateConfirmationForwarding(session);
+            } else if (jsonMessage.has(CLIENT_GAME_RECEIVED_GAME_STATUS_UPDATE_CONFIRMATION)) {
+                updateGameStatus(session, jsonMessage);
             } else {
                 logger.error("Unknown type of message from session: {}", session.getId());
             }
@@ -178,31 +176,13 @@ public class WebSocketServer extends TextWebSocketHandler {
         removeGame(disconnectingSession);
     }
 
-    private void handleGameUpdate(WebSocketSession session, JSONObject jsonMessage) throws IOException {
-        String clientChosenSquareValue = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_VALUE);
+    private void forwardGameUpdateToOpponent(WebSocketSession session, JSONObject jsonMessage) throws IOException {
         String clientChosenSquareNumber = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_NUMBER);
 
+        // Send refreshed game status to opponent. Game status in the server will be updated only
+        // after getting the confirmation of receiving the game status update from the opponent.
         WebSocketSession opponentSession = findOpponent(session).getSession();
-        opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_STATUS, clientChosenSquareNumber));
-
-        Tictactoe tictactoe = findRelatedTictactoe(session);
-        tictactoe.updateState(clientChosenSquareNumber, clientChosenSquareValue);
-        Tictactoe.State state = tictactoe.determineNewTictactoeState();
-
-        switch (state) {
-            case FIRST_PLAYER_WON -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
-                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
-            }
-            case SECOND_PLAYER_WON -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
-                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
-            }
-            case UNRESOLVED -> {
-                session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
-                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
-            }
-        }
+        opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_CHANGED, clientChosenSquareNumber));
     }
 
     private Player findOpponent(WebSocketSession messagingSession) {
@@ -232,24 +212,43 @@ public class WebSocketServer extends TextWebSocketHandler {
         callingSession.sendMessage(jsonMessage(SERVER_SESSION_STATUS_UPDATE_HEARTBEAT, String.valueOf(System.currentTimeMillis())));
     }
 
-    private void handleMessageForwarding(WebSocketSession messagingSession, JSONObject message) throws IOException {
+    private void forwardMessageToOpponent(WebSocketSession messagingSession, JSONObject message) throws IOException {
         Player opponent = findOpponent(messagingSession);
         if (!(opponent instanceof PlayerHolder)) {
-            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_NEW_MESSAGE, message.getString(CLIENT_MESSAGE_NEW_MESSAGE)));
+            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_OPPONENT_MESSAGE, message.getString(CLIENT_MESSAGE_PLAYER_MESSAGE)));
         }
     }
 
-    private void handleMessageConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
-        Player opponent = findOpponent(messagingSession);
-        if (!(opponent instanceof PlayerHolder)) {
-            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_MESSAGE_CONFIRMATION, "Ok"));
-        }
-    }
+    // After receiving confirmation from the opponent: 1. send a confirmation to the player about
+    // receiving the message, 2. update game status in the server, 3. determine new state.
+    private void updateGameStatus(WebSocketSession confirmingSession, JSONObject jsonMessage) throws IOException {
+        Player opponent = findOpponent(confirmingSession);
+        WebSocketSession opponentSession = opponent.getSession();
 
-    private void handleGameStatusUpdateConfirmationForwarding(WebSocketSession messagingSession) throws IOException {
-        Player opponent = findOpponent(messagingSession);
         if (!(opponent instanceof PlayerHolder)) {
-            opponent.getSession().sendMessage(jsonMessage(SERVER_MESSAGE_CLIENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
+            opponentSession.sendMessage(jsonMessage(SERVER_GAME_OPPONENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
+        }
+
+        String clientChosenSquareValue = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_VALUE);
+        String clientChosenSquareNumber = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_NUMBER);
+
+        Tictactoe tictactoe = findRelatedTictactoe(confirmingSession);
+        tictactoe.updateState(clientChosenSquareNumber, clientChosenSquareValue);
+        Tictactoe.State state = tictactoe.determineNewTictactoeState();
+
+        switch (state) {
+            case FIRST_PLAYER_WON -> {
+                confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
+                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
+            }
+            case SECOND_PLAYER_WON -> {
+                confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
+                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
+            }
+            case UNRESOLVED -> {
+                confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
+                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
+            }
         }
     }
 
