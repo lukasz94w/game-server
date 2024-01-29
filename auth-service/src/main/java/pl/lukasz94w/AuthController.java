@@ -15,8 +15,8 @@ public class AuthController {
         return "Successfully logged in!";
     }
 
-    @GetMapping("/verifySignedIn")
-    public String verifySignedIn(HttpSession httpSession) {
+    @GetMapping("/verifySessionActive")
+    public String verifySessionActive(HttpSession httpSession) {
         return "Valid user (active session id: " + httpSession.getId() + ")";
     }
 }

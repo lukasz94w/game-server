@@ -29,15 +29,15 @@ import java.util.stream.Stream;
 import static pl.lukasz94w.message.Client.*;
 import static pl.lukasz94w.message.Server.*;
 
-public class WebSocketServer extends TextWebSocketHandler {
+public class GameServer extends TextWebSocketHandler {
 
-    private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
+    private final Logger logger = LoggerFactory.getLogger(GameServer.class);
 
     private final List<Game> games = new CopyOnWriteArrayList<>();
 
     private final WebSocketServerConfig serverConfig;
 
-    public WebSocketServer(WebSocketServerConfig webSocketServerConfig) {
+    public GameServer(WebSocketServerConfig webSocketServerConfig) {
         this.serverConfig = webSocketServerConfig;
     }
 
@@ -263,7 +263,7 @@ public class WebSocketServer extends TextWebSocketHandler {
 
         ResponseEntity<String> responseEntity;
         try {
-            responseEntity = new RestTemplate().exchange("http://localhost:8093/api/v1/auth/verifySignedIn", HttpMethod.GET, httpEntity, String.class);
+            responseEntity = new RestTemplate().exchange("http://localhost:8093/api/v1/auth/verifySessionActive", HttpMethod.GET, httpEntity, String.class);
         } catch (HttpClientErrorException e) {
             logger.info("Unauthorized attempt of connection"); // ip address could be added here (passed from handshake interceptor f.e.)
             return false;
