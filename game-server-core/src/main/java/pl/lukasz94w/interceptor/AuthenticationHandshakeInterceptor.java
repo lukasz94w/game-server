@@ -9,7 +9,7 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
-import pl.lukasz94w.WebSocketServer;
+import pl.lukasz94w.GameServer;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +20,7 @@ import java.util.Map;
 // connection is established. See more at: WebSocketServer class, afterConnectionEstablished() method.
 public class AuthenticationHandshakeInterceptor implements HandshakeInterceptor {
 
-    private final Logger logger = LoggerFactory.getLogger(WebSocketServer.class);
+    private final Logger logger = LoggerFactory.getLogger(GameServer.class);
 
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler wsHandler, Map<String, Object> attributes) {
