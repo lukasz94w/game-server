@@ -39,12 +39,20 @@ public class SecurityConfig {
                 .password(bcryptPasswordEncoder().encode("user2pass"))
                 .build();
 
+        UserDetails user3 = User.withUsername("user3")
+                .password(bcryptPasswordEncoder().encode("user3pass"))
+                .build();
+
+        UserDetails user4 = User.withUsername("user4")
+                .password(bcryptPasswordEncoder().encode("user4pass"))
+                .build();
+
 //        UserDetails admin = User.withUsername("admin")
 //                .password(bcryptPasswordEncoder().encode("admin123"))
 //                .roles("ADMIN")
 //                .build();
 
-        return new InMemoryUserDetailsManager(Arrays.asList(user1, user2));
+        return new InMemoryUserDetailsManager(Arrays.asList(user1, user2, user3, user4));
     }
 
     @Bean

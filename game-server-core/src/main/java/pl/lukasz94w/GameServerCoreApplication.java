@@ -6,10 +6,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableScheduling
-public class Main {
+public class GameServerCoreApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(Main.class, args);
+        SpringApplication.run(GameServerCoreApplication.class, args);
     }
 
     public static int someTestMethodForJenkinsTesting(int number1, int number2) {

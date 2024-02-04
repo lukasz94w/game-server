@@ -17,12 +17,14 @@ import java.util.Map;
 public class PlayerHolder extends Player {
     private static final WebSocketSession webSocketSessionHolder = new WebSocketSessionHolder();
 
+    private static final String playerNameHolder = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+
     private static final String authCookieHolder = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 
     private static final Long lastHeartbeatHolder = Instant.parse("2100-01-01T00:00:00Z").toEpochMilli();
 
     public PlayerHolder() {
-        super(webSocketSessionHolder, authCookieHolder);
+        super(webSocketSessionHolder, playerNameHolder, authCookieHolder);
         this.lastHeartbeat = lastHeartbeatHolder;
     }
 

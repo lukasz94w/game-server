@@ -11,4 +11,10 @@ public class WebSocketServerConfig {
 
     @Value("${pl.lukasz94w.requiredHeartbeatFrequency}")
     public Integer requiredHeartbeatFrequency;
+
+    @Value("${pl.lukasz94w.verifySessionActiveUrl}")
+    public String verifySessionActiveUrl;
+
+    @Value("${pl.lukasz94w.getUsernameUrl}")
+    public String getUsernameUrl;
 }

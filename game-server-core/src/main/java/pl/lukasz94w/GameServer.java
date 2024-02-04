@@ -44,16 +44,17 @@ public class GameServer extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         HttpHeaders handshakeHeaders = session.getHandshakeHeaders();
-        String authCookie = extractAuthCookie(handshakeHeaders);
+        HttpHeaders authenticationHeaders = removeWebSocketHeaders(handshakeHeaders);
+        String authCookie = extractAuthCookie(authenticationHeaders);
 
         if (games.size() >= serverConfig.maxNumberOfGames) {
             rejectSession(session, "Maximum number of active sessions exceeded. Try again later");
-        } else if (!checkAuthentication(handshakeHeaders)) {
+        } else if (!checkAuthentication(authenticationHeaders)) {
             rejectSession(session, "User unauthenticated");
-        } else if (checkIfGameAlreadyExists(authCookie)) {
-            rejectSession(session, "There can only be one game per session");
+        } else if (checkIfPlayerAlreadyHaveAGame(authCookie)) {
+            rejectSession(session, "There can only be one game per player");
         } else {
-            acceptSession(session, authCookie);
+            acceptSession(session, getPlayerName(authenticationHeaders), authCookie);
         }
     }
 
@@ -111,14 +112,13 @@ public class GameServer extends TextWebSocketHandler {
                 });
     }
 
-    private void acceptSession(WebSocketSession session, String authCookie) {
+    private void acceptSession(WebSocketSession session, String playerName, String authCookie) {
         try {
-            handlePlayersPairing(session, authCookie);
+            handlePlayersPairing(session, playerName, authCookie);
         } catch (Exception e) {
             logger.error("Exception in acceptSession: {}", ExceptionUtils.getStackTrace(e));
         }
-
-        logger.info("Server connection opened with session id: {}. Total games number: {}", session.getId(), games.size());
+        logger.info("Server connection opened with session id: {}. Player name: {}. Total games number: {}", session.getId(), playerName, games.size());
     }
 
     private void rejectSession(WebSocketSession session, String rejectionReason) {
@@ -145,14 +145,14 @@ public class GameServer extends TextWebSocketHandler {
         }
     }
 
-    private void handlePlayersPairing(WebSocketSession session, String authCookie) throws IOException {
+    private void handlePlayersPairing(WebSocketSession session, String playerName, String authCookie) throws IOException {
         if (isGameWithLonelyPlayer()) {
             Game gameWithLonelyPlayer = games.getLast();
-            gameWithLonelyPlayer.attachSecondPlayer(PlayerFactory.createPlayer(session, authCookie));
+            gameWithLonelyPlayer.attachSecondPlayer(PlayerFactory.createPlayer(session, playerName, authCookie));
             gameWithLonelyPlayer.getFirstPlayer().getSession().sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "1st player"));
             session.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "2nd player"));
         } else {
-            games.add(GameFactory.createGame(PlayerFactory.createPlayer(session, authCookie)));
+            games.add(GameFactory.createGame(PlayerFactory.createPlayer(session, playerName, authCookie)));
         }
     }
 
@@ -237,6 +237,7 @@ public class GameServer extends TextWebSocketHandler {
         Tictactoe.State state = tictactoe.determineNewTictactoeState();
 
         switch (state) {
+            // TODO: send result to history-service (without any authorization needed because history-service is not available from external?)
             case FIRST_PLAYER_WON -> {
                 confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
                 opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
@@ -258,27 +259,35 @@ public class GameServer extends TextWebSocketHandler {
 
     // catch original request containing session cookie and send it to validation
     // endpoint to check whether the session exist for sent cookie
-    private boolean checkAuthentication(HttpHeaders handshakeHeaders) {
-        HttpEntity<String> httpEntity = new HttpEntity<>(removeWebSocketHeaders(handshakeHeaders));
+    private boolean checkAuthentication(HttpHeaders authenticationHeaders) {
+        HttpEntity<String> httpEntity = new HttpEntity<>(authenticationHeaders);
 
-        ResponseEntity<String> responseEntity;
+        ResponseEntity<String> response;
         try {
-            responseEntity = new RestTemplate().exchange("http://localhost:8093/api/v1/auth/verifySessionActive", HttpMethod.GET, httpEntity, String.class);
+            response = new RestTemplate().exchange(serverConfig.verifySessionActiveUrl, HttpMethod.GET, httpEntity, String.class);
         } catch (HttpClientErrorException e) {
             logger.info("Unauthorized attempt of connection"); // ip address could be added here (passed from handshake interceptor f.e.)
             return false;
         }
 
-        HttpStatusCode responseStatusCode = responseEntity.getStatusCode();
+        HttpStatusCode responseStatusCode = response.getStatusCode();
         assert (responseStatusCode.equals(HttpStatus.OK));
-        String authCookie = extractAuthCookie(handshakeHeaders);
+        String authCookie = extractAuthCookie(authenticationHeaders);
         logger.info("Request successfully validated for cookie: {}. Response status: {}", authCookie, responseStatusCode);
         return true;
     }
 
+    private String getPlayerName(HttpHeaders authenticationHeaders) {
+        HttpEntity<String> httpEntity = new HttpEntity<>(authenticationHeaders);
+        // TODO: maybe it should be injected like urlConfig?
+        ResponseEntity<String> response = new RestTemplate().exchange(serverConfig.getUsernameUrl, HttpMethod.GET, httpEntity, String.class);
+        return response.getBody();
+    }
+
     // Method which removes WebSocket typical headers. Because request is send to http endpoint (not WebSocket endpoint) it's good
     // practice to remove original WebSocket headers which were received from the WebSocket client. Note: I tested and the 200 HTTP
-    // status is sent back even if these headers are not used (of course session cookie must be valid).
+    // status is sent back even if these headers are not used (of course session cookie must be valid). Basic http header (SESSION)
+    // survive filtering.
     private HttpHeaders removeWebSocketHeaders(HttpHeaders originalHeaders) {
         List<String> webSocketHeaders = List.of("connection", "upgrade", "sec-websocket-version", "sec-websocket-key", "sec-websocket-extensions");
 
@@ -294,7 +303,7 @@ public class GameServer extends TextWebSocketHandler {
         return cookieHeader.replace("SESSION=", "");
     }
 
-    private boolean checkIfGameAlreadyExists(String cookie) {
+    private boolean checkIfPlayerAlreadyHaveAGame(String cookie) {
         return games.stream()
                 .flatMap(game -> Stream.of(game.getFirstPlayer().getAuthCookie(), game.getSecondPlayer().getAuthCookie()))
                 .anyMatch(authCookie -> authCookie.equals(cookie));
