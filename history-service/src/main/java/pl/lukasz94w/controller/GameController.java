@@ -3,14 +3,15 @@ package pl.lukasz94w.controller;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import pl.lukasz94w.request.FinishedGameData;
+import pl.lukasz94w.response.GameDto;
 import pl.lukasz94w.service.GameService;
 
 import javax.validation.Valid;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Size;
+import java.util.Collection;
 
 @RestController
 @RequestMapping("api/v1/game")
@@ -21,16 +22,12 @@ public class GameController {
 
     @PostMapping("/save")
     public ResponseEntity<Void> save(@Valid @RequestBody FinishedGameData data) {
-
-        // there will be checking whether player exists and create if now,
-        // write comment that there should be players created (when auth service is created)
-        // or i could create them using data.sql
-        // instead there is solution like that
-        // TODO: implement registration in authService?
-
-//        // TODO: there will be checking whether user is found if not exception
-//
         gameService.save(data);
         return new ResponseEntity<>(HttpStatus.CREATED);
+    }
+
+    @GetMapping("/findGames/{playerName}")
+    public ResponseEntity<Collection<GameDto>> findGamesByUserName(@PathVariable @NotBlank @Size(max = 100) String playerName) {
+        return new ResponseEntity<>(gameService.findGamesByUserName(playerName), HttpStatus.OK);
     }
 }

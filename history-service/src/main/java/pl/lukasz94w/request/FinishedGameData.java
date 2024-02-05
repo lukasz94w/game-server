@@ -6,7 +6,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import javax.validation.constraints.*;
 import java.util.Date;
 
-@Getter // TODO: needed during json generation?
+@Getter
 public class FinishedGameData {
 
     @NotBlank

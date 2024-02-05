@@ -1,8 +1,8 @@
 INSERT INTO player (name)
-VALUES ('user1');
+SELECT 'user1' WHERE NOT EXISTS (SELECT 1 FROM player WHERE name = 'user1');
 INSERT INTO player (name)
-VALUES ('user2');
+SELECT 'user2' WHERE NOT EXISTS (SELECT 1 FROM player WHERE name = 'user2');
 INSERT INTO player (name)
-VALUES ('user3');
+SELECT 'user3' WHERE NOT EXISTS (SELECT 1 FROM player WHERE name = 'user3');
 INSERT INTO player (name)
-VALUES ('user4');
+SELECT 'user4' WHERE NOT EXISTS (SELECT 1 FROM player WHERE name = 'user4');

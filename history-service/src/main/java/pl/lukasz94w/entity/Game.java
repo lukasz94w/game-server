@@ -1,6 +1,7 @@
 package pl.lukasz94w.entity;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import java.util.Date;
 
 @Entity
+@Getter
 @NoArgsConstructor
 @RequiredArgsConstructor
 public class Game {
@@ -40,5 +42,5 @@ public class Game {
     private Date gameEnded;
 
     @NonNull
-    private Integer numberOfWinMovements;
+    private Integer numberOfWinningMovements;
 }
