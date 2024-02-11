@@ -16,8 +16,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(GameException.class)
     public ResponseEntity<String> handleGameException(GameException gameException) {
-        logger.error("Exception occurred, stacktrace: " + ExceptionUtils.getStackTrace(gameException));
-        return new ResponseEntity<>(gameException.getReason(), HttpStatus.PRECONDITION_FAILED);
+        logger.error("Game exception occurred, reason: " + gameException.getMessage());
+        return new ResponseEntity<>(gameException.getMessage(), HttpStatus.PRECONDITION_FAILED);
     }
 
     @ExceptionHandler(Exception.class)
