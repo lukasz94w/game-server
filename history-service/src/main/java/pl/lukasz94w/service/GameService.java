@@ -1,5 +1,6 @@
 package pl.lukasz94w.service;
 
+import jakarta.annotation.Nullable;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
 import pl.lukasz94w.entity.Game;
@@ -11,9 +12,9 @@ import pl.lukasz94w.request.FinishedGameData;
 import pl.lukasz94w.response.GameDto;
 import pl.lukasz94w.response.MapperDto;
 
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.stream.Collectors;
 
 @Service
@@ -28,13 +29,14 @@ public class GameService {
         String firstPlayerName = data.getFirstPlayerName();
         String secondPlayerName = data.getSecondPlayerName();
         String winnerName = data.getWinnerName();
-        Date gameStarted = data.getGameStarted();
-        Date gameEnded = data.getGameEnded();
+        ZonedDateTime gameStartedUTC = data.getGameStartedUTC();
+        ZonedDateTime gameEndedUTC = data.getGameEndedUTC();
+        Integer numberOfWinningMovements = data.getNumberOfWinningMovements();
 
         // it could also be done by custom ConstraintValidator (on pre-processing level of the incoming request)
         validateNamesUniqueness(firstPlayerName, secondPlayerName);
         validateWinnerName(winnerName, firstPlayerName, secondPlayerName);
-        validateGameDates(gameStarted, gameEnded);
+        validateGameDates(gameStartedUTC, gameEndedUTC);
 
         Player firstPlayer = playerRepository.findByName(firstPlayerName)
                 .orElseThrow(() -> new GameException("First player with name: " + firstPlayerName + ", not found"));
@@ -42,9 +44,9 @@ public class GameService {
         Player secondPlayer = playerRepository.findByName(data.getSecondPlayerName())
                 .orElseThrow(() -> new GameException("Second player with name: " + secondPlayerName + ", not found"));
 
-        Player winner = winnerName.equals(firstPlayerName) ? firstPlayer : secondPlayer;
+        Player winner = getWinner(winnerName, firstPlayerName, firstPlayer, secondPlayerName, secondPlayer);
 
-        Game game = new Game(firstPlayer, secondPlayer, winner, gameStarted, gameEnded, data.getNumberOfWinningMovements());
+        Game game = new Game(firstPlayer, secondPlayer, winner, gameStartedUTC, gameEndedUTC, numberOfWinningMovements);
         gameRepository.save(game);
     }
 
@@ -62,8 +64,8 @@ public class GameService {
     }
 
     private void validateWinnerName(String winnerName, String firstPlayerName, String secondPlayerName) {
-        if (!winnerName.equals(firstPlayerName) && !winnerName.equals(secondPlayerName)) {
-            throw new GameException("Winner name is not equal to one of the players");
+        if (!winnerName.equals(firstPlayerName) && !winnerName.equals(secondPlayerName) && !winnerName.isEmpty()) {
+            throw new GameException("Winner name is not equal to one of the players or is not empty (meaning there is no winner)");
         }
     }
 
@@ -73,9 +75,20 @@ public class GameService {
         }
     }
 
-    private void validateGameDates(Date gameStarted, Date gameEnded) {
-        if (gameStarted.after(gameEnded)) {
+    private void validateGameDates(ZonedDateTime gameStarted, ZonedDateTime gameEnded) {
+        if (gameStarted.compareTo(gameEnded) > 0) {
             throw new GameException("Game started date is later than ending time");
+        }
+    }
+
+    @Nullable
+    private Player getWinner(String winnerName, String firstPlayerName, Player firstPlayer, String secondPlayerName, Player secondPlayer) {
+        if (winnerName.equals(firstPlayerName)) {
+            return firstPlayer;
+        } else if (winnerName.equals(secondPlayerName)) {
+            return secondPlayer;
+        } else {
+            return null;
         }
     }
 }

@@ -1,16 +1,17 @@
 package pl.lukasz94w.entity;
 
+import jakarta.annotation.Nullable;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-import java.util.Date;
+import java.time.ZonedDateTime;
 
 @Entity
 @Getter
-@NoArgsConstructor
+@NoArgsConstructor(force = true)
 @RequiredArgsConstructor
 public class Game {
 
@@ -21,26 +22,26 @@ public class Game {
     @ManyToOne
     @JoinColumn(name = "firstPlayerId")
     @NonNull
-    private Player firstPlayer;
+    private final Player firstPlayer;
 
     @ManyToOne
     @JoinColumn(name = "secondPlayerId")
     @NonNull
-    private Player secondPlayer;
+    private final Player secondPlayer;
 
     @ManyToOne
     @JoinColumn(name = "winnerPlayerId")
-    @NonNull
-    private Player winnerPlayer;
+    @Nullable
+    private final Player winnerPlayer;
 
     @Temporal(TemporalType.TIMESTAMP)
     @NonNull
-    private Date gameStarted;
+    private final ZonedDateTime gameStartedUTC;
 
     @Temporal(TemporalType.TIMESTAMP)
     @NonNull
-    private Date gameEnded;
+    private final ZonedDateTime gameEndedUTC;
 
     @NonNull
-    private Integer numberOfWinningMovements;
+    private final Integer numberOfWinningMovements;
 }

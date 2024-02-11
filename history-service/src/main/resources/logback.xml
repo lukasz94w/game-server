@@ -6,14 +6,14 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>log/game-server-core.log</file>
+        <file>log/history-service.log</file>
         <append>true</append>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-4relative [%thread] %-5level %logger{35} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <logger name="pl.lukasz94w.GameServer" level="INFO">
+    <logger name="pl.lukasz94w.logging.RequestCachingFilter" level="INFO">
         <appender-ref ref="FILE"/>
     </logger>
 

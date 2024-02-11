@@ -8,6 +8,6 @@ public class MapperDto {
 
     public GameDto mapToGameDto(Game game) {
         return new GameDto(game.getFirstPlayer().getName(), game.getSecondPlayer().getName(), game.getWinnerPlayer().getName(),
-                game.getGameStarted(), game.getGameEnded(), game.getNumberOfWinningMovements());
+                game.getGameStartedUTC(), game.getGameEndedUTC(), game.getNumberOfWinningMovements());
     }
 }

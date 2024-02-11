@@ -1,18 +1,37 @@
 package pl.lukasz94w.tictactoe;
 
+import lombok.Getter;
 import pl.lukasz94w.exception.TictactoeException;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
 public class Tictactoe {
 
     private static int totalTictactoeNumber;
+
+    private static final String FIRST_PLAYER_SYMBOL = "X";
+
+    private static final String SECOND_PLAYER_SYMBOL = "O";
+
     private final Map<Integer, String> boardState;
+
+    @Getter
+    private final ZonedDateTime gameStartedUTC;
+
+    @Getter
+    private ZonedDateTime gameEndedUTC;
+
+    @Getter
+    private int numberOfWinningMovements;
 
     Tictactoe() {
         boardState = new HashMap<>();
+        gameStartedUTC = getCurrentUTCZonedDateTime();
         totalTictactoeNumber++;
+        numberOfWinningMovements = 0;
     }
 
     // there could be also implemented features like tracking the actual player turn
@@ -32,8 +51,8 @@ public class Tictactoe {
     }
 
     private void validateSquareValue(String squareValue) {
-        if (!squareValue.equals("X") && !squareValue.equals("O")) {
-            throw new TictactoeException("Wrong square value. Accepted: X or O");
+        if (!squareValue.equals(FIRST_PLAYER_SYMBOL) && !squareValue.equals(SECOND_PLAYER_SYMBOL)) {
+            throw new TictactoeException("Wrong square value. Accepted: " + FIRST_PLAYER_SYMBOL + " or " + SECOND_PLAYER_SYMBOL);
         }
     }
 
@@ -67,9 +86,13 @@ public class Tictactoe {
                 String valueC = boardState.get(c);
 
                 if (valueA.equals(valueB) && valueA.equals(valueC)) {
-                    if (valueA.equals("X")) {
+                    if (valueA.equals(FIRST_PLAYER_SYMBOL)) {
+                        numberOfWinningMovements = getNumberOfWinningMovements(FIRST_PLAYER_SYMBOL);
+                        gameEndedUTC = getCurrentUTCZonedDateTime();
                         return State.FIRST_PLAYER_WON;
                     } else {
+                        numberOfWinningMovements = getNumberOfWinningMovements(SECOND_PLAYER_SYMBOL);
+                        gameEndedUTC = getCurrentUTCZonedDateTime();
                         return State.SECOND_PLAYER_WON;
                     }
                 }
@@ -77,10 +100,22 @@ public class Tictactoe {
         }
 
         if (boardState.size() == 9) {
+            gameEndedUTC = getCurrentUTCZonedDateTime();
             return State.UNRESOLVED;
         }
 
         return State.ONGOING;
+    }
+
+    private ZonedDateTime getCurrentUTCZonedDateTime() {
+        return ZonedDateTime.now(ZoneId.of("Europe/London"));
+    }
+
+    private int getNumberOfWinningMovements(String winnerSymbol) {
+        return (int) boardState.values()
+                .stream()
+                .filter(symbol -> symbol.equals(winnerSymbol))
+                .count();
     }
 
     public enum State {

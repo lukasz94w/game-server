@@ -1,9 +1,14 @@
 package pl.lukasz94w;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.client.HttpClientErrorException;
@@ -19,6 +24,7 @@ import pl.lukasz94w.game.GameFactory;
 import pl.lukasz94w.player.Player;
 import pl.lukasz94w.player.PlayerFactory;
 import pl.lukasz94w.player.PlayerHolder;
+import pl.lukasz94w.request.FinishedGameData;
 import pl.lukasz94w.tictactoe.Tictactoe;
 
 import java.io.IOException;
@@ -28,17 +34,23 @@ import java.util.stream.Stream;
 
 import static pl.lukasz94w.message.Client.*;
 import static pl.lukasz94w.message.Server.*;
+import static pl.lukasz94w.tictactoe.Tictactoe.State.ONGOING;
 
+@AllArgsConstructor
 public class GameServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(GameServer.class);
 
-    private final List<Game> games = new CopyOnWriteArrayList<>();
+    private final List<Game> games;
 
-    private final WebSocketServerConfig serverConfig;
+    private final RestTemplate restTemplate;
 
-    public GameServer(WebSocketServerConfig webSocketServerConfig) {
-        this.serverConfig = webSocketServerConfig;
+    @Autowired
+    private WebSocketServerConfig serverConfig;
+
+    public GameServer() {
+        this.games = new CopyOnWriteArrayList<>();
+        this.restTemplate = new RestTemplate();
     }
 
     @Override
@@ -118,7 +130,7 @@ public class GameServer extends TextWebSocketHandler {
         } catch (Exception e) {
             logger.error("Exception in acceptSession: {}", ExceptionUtils.getStackTrace(e));
         }
-        logger.info("Server connection opened with session id: {}. Player name: {}. Total games number: {}", session.getId(), playerName, games.size());
+        logger.info("Server connection opened with session id: {}. Player name: {}", session.getId(), playerName);
     }
 
     private void rejectSession(WebSocketSession session, String rejectionReason) {
@@ -190,15 +202,7 @@ public class GameServer extends TextWebSocketHandler {
                 .filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession))
                 .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer() : game.getFirstPlayer())
                 .findFirst()
-                .orElseThrow(() -> new GameException("No opponent found"));
-    }
-
-    private Tictactoe findRelatedTictactoe(WebSocketSession session) {
-        return games.stream()
-                .filter(game -> game.getFirstPlayer().getSession().equals(session) || game.getSecondPlayer().getSession().equals(session))
-                .map(Game::getTictactoe)
-                .findFirst()
-                .orElseThrow(() -> new GameException("No Tictactoe game found for the session: " + session.getId()));
+                .orElseThrow(() -> new GameException("No opponent found for messaging session: " + messagingSession));
     }
 
     private void handleHeartbeat(WebSocketSession callingSession) throws IOException {
@@ -219,38 +223,70 @@ public class GameServer extends TextWebSocketHandler {
         }
     }
 
+    private Game findGameRelated(WebSocketSession session) {
+        return games.stream()
+                .filter(game -> game.getFirstPlayer().getSession().equals(session) || game.getSecondPlayer().getSession().equals(session))
+                .findFirst()
+                .orElseThrow(() -> new GameException("No related game found"));
+    }
+
     // After receiving confirmation from the opponent: 1. send a confirmation to the player about
-    // receiving the message, 2. update game status in the server, 3. determine new state.
+    // receiving the message, 2. update game status in the server, 3. determine new state, 4. (optional):
+    // finish the game and send history to history-service.
     private void updateGameStatus(WebSocketSession confirmingSession, JSONObject jsonMessage) throws IOException {
-        Player opponent = findOpponent(confirmingSession);
-        WebSocketSession opponentSession = opponent.getSession();
+        Game game = findGameRelated(confirmingSession);
+        Player firstPlayer = game.getFirstPlayer();
+        Player secondPlayer = game.getSecondPlayer();
 
-        if (!(opponent instanceof PlayerHolder)) {
-            opponentSession.sendMessage(jsonMessage(SERVER_GAME_OPPONENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
-        }
+        Player confirmingPlayer = firstPlayer.getSession().equals(confirmingSession) ? firstPlayer : secondPlayer;
+        Player opponent = confirmingPlayer.equals(firstPlayer) ? secondPlayer : firstPlayer;
 
-        String clientChosenSquareValue = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_VALUE);
-        String clientChosenSquareNumber = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_NUMBER);
+        opponent.getSession().sendMessage(jsonMessage(SERVER_GAME_OPPONENT_RECEIVED_GAME_STATUS_CHANGE_CONFIRMATION, "Ok"));
 
-        Tictactoe tictactoe = findRelatedTictactoe(confirmingSession);
-        tictactoe.updateState(clientChosenSquareNumber, clientChosenSquareValue);
+        String playerChosenSquareValue = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_VALUE);
+        String playerChosenSquareNumber = jsonMessage.getString(CLIENT_GAME_UPDATE_CHOSEN_SQUARE_NUMBER);
+
+        Tictactoe tictactoe = game.getTictactoe();
+        tictactoe.updateState(playerChosenSquareNumber, playerChosenSquareValue);
         Tictactoe.State state = tictactoe.determineNewTictactoeState();
 
-        switch (state) {
-            // TODO: send result to history-service (without any authorization needed because history-service is not available from external?)
-            case FIRST_PLAYER_WON -> {
-                confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
-                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.FIRST_PLAYER_WON.message()));
-            }
-            case SECOND_PLAYER_WON -> {
-                confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
-                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.SECOND_PLAYER_WON.message()));
-            }
-            case UNRESOLVED -> {
-                confirmingSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
-                opponentSession.sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, Tictactoe.State.UNRESOLVED.message()));
-            }
+        if (!state.equals(ONGOING)) {
+            informPlayers(confirmingPlayer, state, opponent);
+            informHistoryService(game, state);
         }
+    }
+
+    private void informPlayers(Player confirmingPlayer, Tictactoe.State state, Player opponent) throws IOException {
+        confirmingPlayer.getSession().sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, state.message()));
+        opponent.getSession().sendMessage(jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, state.message()));
+    }
+
+    private void informHistoryService(Game game, Tictactoe.State state) throws JsonProcessingException {
+        restTemplate.postForEntity(serverConfig.saveGameUrl, getRequestHttpEntity(game, state), String.class);
+    }
+
+    private HttpEntity<String> getRequestHttpEntity(Game game, Tictactoe.State state) throws JsonProcessingException {
+        FinishedGameData finishedGameData = getFinishedGameData(game, state);
+
+        HttpHeaders requestHeaders = new HttpHeaders();
+        requestHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        String requestBody = objectMapper.writeValueAsString(finishedGameData);
+
+        return new HttpEntity<>(requestBody, requestHeaders);
+    }
+
+    private static FinishedGameData getFinishedGameData(Game game, Tictactoe.State state) {
+        String winnerName = switch (state) {
+            case FIRST_PLAYER_WON -> game.getFirstPlayer().getName();
+            case SECOND_PLAYER_WON -> game.getSecondPlayer().getName();
+            default -> "";
+        };
+
+        Tictactoe tictactoe = game.getTictactoe();
+        return new FinishedGameData(game.getFirstPlayer().getName(), game.getSecondPlayer().getName(), winnerName, tictactoe.getGameStartedUTC(), tictactoe.getGameEndedUTC(), tictactoe.getNumberOfWinningMovements());
     }
 
     private void removeGame(WebSocketSession disconnectingSession) {
@@ -264,7 +300,7 @@ public class GameServer extends TextWebSocketHandler {
 
         ResponseEntity<String> response;
         try {
-            response = new RestTemplate().exchange(serverConfig.verifySessionActiveUrl, HttpMethod.GET, httpEntity, String.class);
+            response = restTemplate.exchange(serverConfig.verifySessionActiveUrl, HttpMethod.GET, httpEntity, String.class);
         } catch (HttpClientErrorException e) {
             logger.info("Unauthorized attempt of connection"); // ip address could be added here (passed from handshake interceptor f.e.)
             return false;
@@ -279,8 +315,7 @@ public class GameServer extends TextWebSocketHandler {
 
     private String getPlayerName(HttpHeaders authenticationHeaders) {
         HttpEntity<String> httpEntity = new HttpEntity<>(authenticationHeaders);
-        // TODO: maybe it should be injected like urlConfig?
-        ResponseEntity<String> response = new RestTemplate().exchange(serverConfig.getUsernameUrl, HttpMethod.GET, httpEntity, String.class);
+        ResponseEntity<String> response = restTemplate.exchange(serverConfig.getUsernameUrl, HttpMethod.GET, httpEntity, String.class);
         return response.getBody();
     }
 

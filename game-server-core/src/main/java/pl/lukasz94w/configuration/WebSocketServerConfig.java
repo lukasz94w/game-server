@@ -17,4 +17,7 @@ public class WebSocketServerConfig {
 
     @Value("${pl.lukasz94w.getUsernameUrl}")
     public String getUsernameUrl;
+
+    @Value("${pl.lukasz94w.saveGameUrl}")
+    public String saveGameUrl;
 }

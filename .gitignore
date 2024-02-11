@@ -33,3 +33,6 @@ bin/
 game-server.iml
 .idea
 game-server-core.log
+
+### log ###
+log/

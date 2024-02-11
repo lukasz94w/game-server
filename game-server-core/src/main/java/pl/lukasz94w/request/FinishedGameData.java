@@ -1,4 +1,4 @@
-package pl.lukasz94w.response;
+package pl.lukasz94w.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -7,17 +7,17 @@ import java.time.ZonedDateTime;
 
 @AllArgsConstructor
 @Getter
-public class GameDto {
+public class FinishedGameData {
 
     private String firstPlayerName;
 
     private String secondPlayerName;
 
-    private String winnerPlayerName;
+    private String winnerName;
 
-    private ZonedDateTime gameStarted;
+    private ZonedDateTime gameStartedUTC;
 
-    private ZonedDateTime gameEnded;
+    private ZonedDateTime gameEndedUTC;
 
     private Integer numberOfWinningMovements;
 }

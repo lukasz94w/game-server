@@ -4,7 +4,7 @@ import lombok.Getter;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import javax.validation.constraints.*;
-import java.util.Date;
+import java.time.ZonedDateTime;
 
 @Getter
 public class FinishedGameData {
@@ -23,11 +23,11 @@ public class FinishedGameData {
 
     @Past
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-    private Date gameStarted;
+    private ZonedDateTime gameStartedUTC;
 
     @Past
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-    private Date gameEnded;
+    private ZonedDateTime gameEndedUTC;
 
     @Positive
     @Max(value = 5)
