@@ -18,10 +18,10 @@ import java.nio.charset.StandardCharsets;
 
 @Order(value = Ordered.HIGHEST_PRECEDENCE)
 @Component
-@WebFilter(filterName = "RequestCachingFilter", urlPatterns = "/*")
-public class RequestCachingFilter extends OncePerRequestFilter {
+@WebFilter(filterName = "SaveRequestCachingFilter", urlPatterns = "/save")
+public class SaveRequestCachingFilter extends OncePerRequestFilter {
 
-    private final static Logger logger = LoggerFactory.getLogger(RequestCachingFilter.class);
+    private final static Logger logger = LoggerFactory.getLogger(SaveRequestCachingFilter.class);
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,

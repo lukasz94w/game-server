@@ -13,7 +13,7 @@
         </encoder>
     </appender>
 
-    <logger name="pl.lukasz94w.logging.RequestCachingFilter" level="INFO">
+    <logger name="pl.lukasz94w.logging.SaveRequestCachingFilter" level="INFO">
         <appender-ref ref="FILE"/>
     </logger>
 

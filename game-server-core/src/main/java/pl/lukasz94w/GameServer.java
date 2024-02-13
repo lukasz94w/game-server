@@ -315,7 +315,7 @@ public class GameServer extends TextWebSocketHandler {
 
     private String getPlayerName(HttpHeaders authenticationHeaders) {
         HttpEntity<String> httpEntity = new HttpEntity<>(authenticationHeaders);
-        ResponseEntity<String> response = restTemplate.exchange(serverConfig.getUsernameUrl, HttpMethod.GET, httpEntity, String.class);
+        ResponseEntity<String> response = restTemplate.exchange(serverConfig.getUserNameUrl, HttpMethod.GET, httpEntity, String.class);
         return response.getBody();
     }
 

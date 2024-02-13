@@ -20,6 +20,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(gameException.getMessage(), HttpStatus.PRECONDITION_FAILED);
     }
 
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<String> handleAuthenticationException(AuthenticationException authenticationException) {
+        logger.error("Authentication exception occurred, reason: " + authenticationException.getMessage());
+        return new ResponseEntity<>(authenticationException.getMessage(), HttpStatus.UNAUTHORIZED);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<String> defaultExceptionHandler(Exception exception) {
         logger.error("Exception occurred, stacktrace: " + ExceptionUtils.getStackTrace(exception));

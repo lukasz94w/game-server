@@ -19,7 +19,7 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.session.SessionManagementFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import pl.lukasz94w.filter.CorsFilter;
+import pl.lukasz94w.cors.CorsFilter;
 import pl.lukasz94w.login.NoPopupBasicAuthenticationEntryPoint;
 import pl.lukasz94w.logout.ClearDataLogoutHandler;
 
