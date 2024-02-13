@@ -4,10 +4,10 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class MainTest {
+class GameServerCoreApplicationTest {
 
     @Test
     void someTestMethodForJenkinsTesting() {
-        assertEquals(Main.someTestMethodForJenkinsTesting(5, 5), 10);
+        assertEquals(GameServerCoreApplication.someTestMethodForJenkinsTesting(5, 5), 10);
     }
 }

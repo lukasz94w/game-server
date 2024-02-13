@@ -7,8 +7,8 @@ public class PlayerFactory {
     private PlayerFactory() {
     }
 
-    public static Player createPlayer(WebSocketSession session, String authCookie) {
-        return new Player(session, authCookie);
+    public static Player createPlayer(WebSocketSession session, String playerName, String authCookie) {
+        return new Player(session, playerName, authCookie);
     }
 
     public static Player createPlayerHolder() {

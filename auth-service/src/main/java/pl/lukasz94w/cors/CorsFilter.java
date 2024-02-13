@@ -1,13 +1,16 @@
-package pl.lukasz94w.filter;
+package pl.lukasz94w.cors;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 
-
 // Here are the headers set which browser requires during CORS
 // communication, so it can proceed with the requests sent to the backend.
+
+// TODO: it should only be created when application is running locally (local profile) it's not needed when
+// it's a production environment. It's possible to solve this problem using @Bean which is created only when
+// local profile is provided.
 public class CorsFilter implements Filter {
 
     @Override

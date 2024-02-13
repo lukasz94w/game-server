@@ -16,6 +16,7 @@
     <modules>
         <module>game-server-core</module>
         <module>auth-service</module>
+        <module>history-service</module>
     </modules>
 
     <dependencyManagement>
