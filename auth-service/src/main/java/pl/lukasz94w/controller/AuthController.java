@@ -1,4 +1,4 @@
-package pl.lukasz94w;
+package pl.lukasz94w.controller;
 
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
