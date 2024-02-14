@@ -8,11 +8,20 @@ import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import pl.lukasz94w.GameServer;
+import pl.lukasz94w.commons.GameServerUtil;
 import pl.lukasz94w.interceptor.AuthenticationHandshakeInterceptor;
 
 @Configuration
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
+
+    private final WebSocketServerConfig webSocketServerConfig;
+    private final GameServerUtil gameServerUtil;
+
+    public WebSocketConfig(WebSocketServerConfig webSocketServerConfig, GameServerUtil gameServerUtil) {
+        this.webSocketServerConfig = webSocketServerConfig;
+        this.gameServerUtil = gameServerUtil;
+    }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
@@ -29,7 +38,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public WebSocketHandler webSocketHandler() {
-        return new GameServer();
+        return new GameServer(webSocketServerConfig, gameServerUtil);
     }
 
     @Bean

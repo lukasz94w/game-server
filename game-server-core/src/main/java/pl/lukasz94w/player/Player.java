@@ -10,14 +10,11 @@ public class Player {
 
     protected final String name;
 
-    protected final String authCookie;
-
     protected Long lastHeartbeat;
 
-    Player(WebSocketSession session, String name, String authCookie) {
+    Player(WebSocketSession session, String name) {
         this.session = session;
         this.name = name;
-        this.authCookie = authCookie;
         this.lastHeartbeat = System.currentTimeMillis();
     }
 

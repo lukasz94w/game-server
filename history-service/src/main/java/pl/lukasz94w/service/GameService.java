@@ -29,6 +29,7 @@ public class GameService {
     private final GameRepository gameRepository;
     private final PlayerRepository playerRepository;
     private final MapperDto mapperDto;
+    private final RestTemplate restTemplate;
 
     @Value("${pl.lukasz94w.getUserNameUrl}")
     private String getUserNameUrl;
@@ -37,6 +38,7 @@ public class GameService {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.mapperDto = mapperDto;
+        this.restTemplate = new RestTemplate();
     }
 
     public void save(FinishedGameData data) {
@@ -109,7 +111,7 @@ public class GameService {
 
     private String getUserName(HttpHeaders requestHttpHeaders) {
         try {
-            ResponseEntity<String> response = new RestTemplate().exchange(getUserNameUrl, HttpMethod.GET, new HttpEntity<>(requestHttpHeaders), String.class);
+            ResponseEntity<String> response = restTemplate.exchange(getUserNameUrl, HttpMethod.GET, new HttpEntity<>(requestHttpHeaders), String.class);
             return response.getBody();
         } catch (HttpClientErrorException e) {
             throw new AuthenticationException("Failed authentication, access blocked");
