@@ -7,7 +7,7 @@ public class GameFactory {
     private GameFactory() {
     }
 
-    public static Game createGame(Player firstPlayer) {
-        return new Game(firstPlayer);
+    public static Game createGame(Player firstPlayer, Player secondPlayer) {
+        return new Game(firstPlayer, secondPlayer);
     }
 }

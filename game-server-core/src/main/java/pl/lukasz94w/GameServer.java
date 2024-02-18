@@ -1,7 +1,6 @@
 package pl.lukasz94w;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import lombok.AllArgsConstructor;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -15,6 +14,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import pl.lukasz94w.commons.GameServerUtil;
+import pl.lukasz94w.configuration.ServiceUrls;
 import pl.lukasz94w.configuration.WebSocketServerConfig;
 import pl.lukasz94w.exception.GameException;
 import pl.lukasz94w.exception.GameServerAccessDeniedException;
@@ -22,20 +22,19 @@ import pl.lukasz94w.game.Game;
 import pl.lukasz94w.game.GameFactory;
 import pl.lukasz94w.player.Player;
 import pl.lukasz94w.player.PlayerFactory;
-import pl.lukasz94w.player.PlayerHolder;
 import pl.lukasz94w.tictactoe.Tictactoe;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static pl.lukasz94w.message.Client.*;
 import static pl.lukasz94w.message.Server.*;
 import static pl.lukasz94w.tictactoe.Tictactoe.State.ONGOING;
 
-@AllArgsConstructor
 public class GameServer extends TextWebSocketHandler {
 
     private final Logger logger = LoggerFactory.getLogger(GameServer.class);
@@ -44,15 +43,21 @@ public class GameServer extends TextWebSocketHandler {
 
     private final RestTemplate restTemplate;
 
-    private WebSocketServerConfig serverConfig;
+    private final WebSocketServerConfig serverConfig;
 
-    private GameServerUtil gameServerUtil;
+    private final ServiceUrls serviceUrls;
 
-    public GameServer(WebSocketServerConfig serverConfig, GameServerUtil gameServerUtil) {
+    private final GameServerUtil gameServerUtil;
+
+    private Player lonelyPlayer;
+
+    public GameServer(WebSocketServerConfig serverConfig, ServiceUrls serviceUrls, GameServerUtil gameServerUtil) {
         this.serverConfig = serverConfig;
+        this.serviceUrls = serviceUrls;
         this.gameServerUtil = gameServerUtil;
-        this.games = new CopyOnWriteArrayList<>();
-        this.restTemplate = new RestTemplate();
+        games = new CopyOnWriteArrayList<>();
+        restTemplate = new RestTemplate();
+        lonelyPlayer = null;
     }
 
     @Override
@@ -62,7 +67,8 @@ public class GameServer extends TextWebSocketHandler {
         try {
             verifyMaxSessionsNumber();
             String userName = verifyAuthenticationAndGetUserName(authenticationHeaders);
-            verifyIfPlayerAlreadyHaveAGameActive(userName);
+            verifyIfPLayerIsLonelyPlayer(userName);
+            verifyIfPlayerAlreadyHaveAGame(userName);
             acceptSession(session, userName);
         } catch (GameServerAccessDeniedException exception) {
             rejectSession(session, exception.getMessage());
@@ -71,10 +77,9 @@ public class GameServer extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession disconnectingSession, CloseStatus status) {
-        logger.info("Server connection closed: {}, session id: {}", status, disconnectingSession.getId());
-
         try {
             handleDisconnection(disconnectingSession);
+            logger.info("Server connection closed: {}, session id: {}", status, disconnectingSession.getId());
         } catch (Exception e) {
             logger.error("Exception in afterConnectionClosed: {}", ExceptionUtils.getStackTrace(e));
         }
@@ -109,24 +114,32 @@ public class GameServer extends TextWebSocketHandler {
     @Scheduled(fixedDelayString = "${pl.lukasz94w.inactiveSessionsCheckingFrequency}")
     private void inactiveSessionsCleaner() {
         long currentTimestamp = System.currentTimeMillis();
-
-        games.stream()
-                .flatMap(game -> Stream.of(game.getFirstPlayer(), game.getSecondPlayer()))
-                .filter(player -> currentTimestamp - player.getLastHeartbeat() > serverConfig.requiredHeartbeatFrequency)
-                .forEach(inactivePlayer -> {
-                    try {
-                        logger.info("Inactive session detected: {}, closing it...", inactivePlayer.getSession().getId());
-                        inactivePlayer.getSession().close(); // triggers afterConnectionClose()
-                    } catch (IOException e) {
-                        logger.error("Exception in inactiveSessionsCleaner, during closing idle session with id: {}", inactivePlayer.getSession().getId());
-                    }
-                });
+        checkLonelyPlayerSession(currentTimestamp);
+        checkActiveGamesSessions(currentTimestamp);
     }
 
     private void verifyMaxSessionsNumber() {
         if (games.size() >= serverConfig.maxNumberOfGames) {
             throw new GameServerAccessDeniedException("Maximum number of active sessions exceeded. Try again later");
         }
+    }
+
+    private void verifyIfPLayerIsLonelyPlayer(String userName) {
+        if (isLonelyPlayer()) {
+            if (lonelyPlayer.getName().equals(userName)) {
+                throw new GameServerAccessDeniedException("Player already waiting in lobby!");
+            }
+        }
+    }
+
+    private void verifyIfPlayerAlreadyHaveAGame(String userName) {
+        games.stream()
+                .flatMap(game -> Stream.of(game.getFirstPlayer().getName(), game.getSecondPlayer().getName()))
+                .filter(name -> name.equals(userName))
+                .findFirst()
+                .ifPresent(name -> {
+                    throw new GameServerAccessDeniedException("There can only be one game per player");
+                });
     }
 
     // catch original request containing session cookie and send it to validation
@@ -136,7 +149,7 @@ public class GameServer extends TextWebSocketHandler {
 
         ResponseEntity<String> response;
         try {
-            response = restTemplate.exchange(serverConfig.getUserNameUrl, HttpMethod.GET, httpEntity, String.class);
+            response = restTemplate.exchange(serviceUrls.getUserNameUrl, HttpMethod.GET, httpEntity, String.class);
         } catch (HttpClientErrorException e) {
             logger.info("Unauthorized attempt of connection"); // ip address could be added here (passed from handshake interceptor f.e.)
             throw new GameServerAccessDeniedException("User unauthenticated");
@@ -149,23 +162,12 @@ public class GameServer extends TextWebSocketHandler {
         return response.getBody();
     }
 
-    private void verifyIfPlayerAlreadyHaveAGameActive(String userName) {
-        games.stream()
-                .flatMap(game -> Stream.of(game.getFirstPlayer().getName(), game.getSecondPlayer().getName()))
-                .filter(name -> name.equals(userName))
-                .findFirst()
-                .ifPresent(name -> {
-                    throw new GameServerAccessDeniedException("There can only be one game per player");
-                });
-    }
-
     private void acceptSession(WebSocketSession session, String playerName) {
         try {
             handlePlayersPairing(session, playerName);
         } catch (Exception e) {
             logger.error("Exception in acceptSession: {}", ExceptionUtils.getStackTrace(e));
         }
-        logger.info("Server connection opened with session id: {}. Player name: {}", session.getId(), playerName);
     }
 
     private void rejectSession(WebSocketSession session, String rejectionReason) {
@@ -193,34 +195,60 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private void handlePlayersPairing(WebSocketSession session, String playerName) throws IOException {
-        if (isGameWithLonelyPlayer()) {
-            Game gameWithLonelyPlayer = games.getLast();
-            gameWithLonelyPlayer.attachSecondPlayer(PlayerFactory.createPlayer(session, playerName));
-            gameWithLonelyPlayer.getFirstPlayer().getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "1st player"));
-            session.sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "2nd player"));
+        if (isLonelyPlayer()) {
+            Player firstPlayer = PlayerFactory.createPlayer(lonelyPlayer.getSession(), lonelyPlayer.getName()); // shallow copy
+            clearLonelyPlayerReference();
+            Player secondPlayer = PlayerFactory.createPlayer(session, playerName);
+            games.add(GameFactory.createGame(firstPlayer, secondPlayer));
+
+            firstPlayer.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "1st player"));
+            secondPlayer.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_STARTED, "2nd player"));
         } else {
-            games.add(GameFactory.createGame(PlayerFactory.createPlayer(session, playerName)));
+            lonelyPlayer = PlayerFactory.createPlayer(session, playerName);
         }
     }
 
-    private boolean isGameWithLonelyPlayer() {
-        if (games.isEmpty()) {
-            return false;
-        } else {
-            return games.getLast().getSecondPlayer() instanceof PlayerHolder;
+    private void checkLonelyPlayerSession(long currentTimestamp) {
+        if (isLonelyPlayer()) {
+            if (isHeartbeatExpired(currentTimestamp).test(lonelyPlayer)) {
+                closeInactiveSession(lonelyPlayer);
+            }
+        }
+    }
+
+    private void checkActiveGamesSessions(long currentTimestamp) {
+        games.stream()
+                .flatMap(game -> Stream.of(game.getFirstPlayer(), game.getSecondPlayer()))
+                .filter(isHeartbeatExpired(currentTimestamp))
+                .forEach(this::closeInactiveSession);
+    }
+
+    private Predicate<Player> isHeartbeatExpired(long currentTimestamp) {
+        return player -> currentTimestamp - player.getLastHeartbeat() > serverConfig.requiredHeartbeatFrequency;
+    }
+
+    private void closeInactiveSession(Player player) {
+        try {
+            logger.info("Inactive session detected: {}, closing it...", player.getSession().getId());
+            player.getSession().close(); // triggers afterConnectionClose()
+        } catch (IOException e) {
+            logger.error("Exception in inactiveSessionsCleaner, during closing idle session with id: {}", player.getSession().getId());
         }
     }
 
     private void handleDisconnection(WebSocketSession disconnectingSession) throws IOException {
-        Optional<Player> opponent = findOptionalOpponent(disconnectingSession);
-
-        if (opponent.isPresent()) {
-            Player existingOpponent = opponent.get();
-            WebSocketSession existingOpponentSession = existingOpponent.getSession();
-            if (!(existingOpponent instanceof PlayerHolder) && existingOpponentSession.isOpen()) {
-                existingOpponentSession.sendMessage(gameServerUtil.jsonMessage(SERVER_SESSION_STATUS_UPDATE_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
-                existingOpponentSession.close();
+        if (isLonelyPlayer()) {
+            if (lonelyPlayer.getSession().equals(disconnectingSession)) {
+                clearLonelyPlayerReference();
+                return; // if that's lonely session there is no need to do anything more
             }
+        }
+
+        // if it's not a lonely session player server should: inform second player about disconnection and remove the game
+        Optional<WebSocketSession> optionalOpponentSession = findOptionalOpponentSession(disconnectingSession);
+        if (optionalOpponentSession.isPresent()) {
+            WebSocketSession foundOpponentSession = optionalOpponentSession.get();
+            foundOpponentSession.sendMessage(gameServerUtil.jsonMessage(SERVER_SESSION_STATUS_UPDATE_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
         }
 
         removeGame(disconnectingSession);
@@ -231,26 +259,32 @@ public class GameServer extends TextWebSocketHandler {
 
         // Send refreshed game status to opponent. Game status in the server will be updated only
         // after getting the confirmation of receiving the game status update from the opponent.
-        WebSocketSession opponentSession = findOpponent(session).getSession();
-        opponentSession.sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_CHANGED, clientChosenSquareNumber));
+        findOpponentSession(session).sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_CHANGED, clientChosenSquareNumber));
     }
 
-    private Player findOpponent(WebSocketSession messagingSession) {
+    private WebSocketSession findOpponentSession(WebSocketSession messagingSession) {
         return games.stream()
                 .filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession))
-                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer() : game.getFirstPlayer())
+                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession())
                 .findFirst()
-                .orElseThrow(() -> new GameException("No opponent found for messaging session: " + messagingSession));
+                .orElseThrow(() -> new GameException("No opponent session found for messaging session: " + messagingSession));
     }
 
-    private Optional<Player> findOptionalOpponent(WebSocketSession messagingSession) {
+    private Optional<WebSocketSession> findOptionalOpponentSession(WebSocketSession messagingSession) {
         return games.stream()
                 .filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession))
-                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer() : game.getFirstPlayer())
+                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession())
                 .findFirst();
     }
 
     private void handleHeartbeat(WebSocketSession callingSession) throws IOException {
+        if (isLonelyPlayer()) {
+            if (lonelyPlayer.getSession().equals(callingSession)) {
+                lonelyPlayer.updateLastHeartbeat();
+                return;
+            }
+        }
+
         Player sessionRelatedPlayer = games.stream()
                 .filter(game -> game.getFirstPlayer().getSession().equals(callingSession) || game.getSecondPlayer().getSession().equals(callingSession))
                 .map(game -> game.getFirstPlayer().getSession().equals(callingSession) ? game.getFirstPlayer() : game.getSecondPlayer())
@@ -262,10 +296,7 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private void forwardMessageToOpponent(WebSocketSession messagingSession, JSONObject message) throws IOException {
-        Player opponent = findOpponent(messagingSession);
-        if (!(opponent instanceof PlayerHolder)) {
-            opponent.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_MESSAGE_OPPONENT_MESSAGE, message.getString(CLIENT_MESSAGE_PLAYER_MESSAGE)));
-        }
+        findOpponentSession(messagingSession).sendMessage(gameServerUtil.jsonMessage(SERVER_MESSAGE_OPPONENT_MESSAGE, message.getString(CLIENT_MESSAGE_PLAYER_MESSAGE)));
     }
 
     private Game findGameRelated(WebSocketSession session) {
@@ -301,13 +332,21 @@ public class GameServer extends TextWebSocketHandler {
         }
     }
 
+    private boolean isLonelyPlayer() {
+        return lonelyPlayer != null;
+    }
+
+    private void clearLonelyPlayerReference() {
+        lonelyPlayer = null;
+    }
+
     private void informPlayers(Player confirmingPlayer, Tictactoe.State state, Player opponent) throws IOException {
         confirmingPlayer.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, state.message()));
         opponent.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, state.message()));
     }
 
     private void informHistoryService(Game game, Tictactoe.State state) throws JsonProcessingException {
-        restTemplate.postForEntity(serverConfig.saveGameUrl, gameServerUtil.getRequestHttpEntity(game, state), String.class);
+        restTemplate.postForEntity(serviceUrls.saveGameUrl, gameServerUtil.getRequestHttpEntity(game, state), String.class);
     }
 
     private void removeGame(WebSocketSession disconnectingSession) {
