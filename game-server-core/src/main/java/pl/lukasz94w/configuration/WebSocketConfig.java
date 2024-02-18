@@ -16,10 +16,14 @@ import pl.lukasz94w.interceptor.AuthenticationHandshakeInterceptor;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final WebSocketServerConfig webSocketServerConfig;
+
+    private final ServiceUrls serviceUrls;
+
     private final GameServerUtil gameServerUtil;
 
-    public WebSocketConfig(WebSocketServerConfig webSocketServerConfig, GameServerUtil gameServerUtil) {
+    public WebSocketConfig(WebSocketServerConfig webSocketServerConfig, ServiceUrls serviceUrls, GameServerUtil gameServerUtil) {
         this.webSocketServerConfig = webSocketServerConfig;
+        this.serviceUrls = serviceUrls;
         this.gameServerUtil = gameServerUtil;
     }
 
@@ -38,7 +42,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Bean
     public WebSocketHandler webSocketHandler() {
-        return new GameServer(webSocketServerConfig, gameServerUtil);
+        return new GameServer(webSocketServerConfig, serviceUrls, gameServerUtil);
     }
 
     @Bean

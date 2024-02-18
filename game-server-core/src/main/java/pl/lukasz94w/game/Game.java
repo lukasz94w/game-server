@@ -1,34 +1,19 @@
 package pl.lukasz94w.game;
 
+import lombok.Getter;
 import pl.lukasz94w.player.Player;
-import pl.lukasz94w.player.PlayerFactory;
 import pl.lukasz94w.tictactoe.Tictactoe;
 import pl.lukasz94w.tictactoe.TictactoeFactory;
 
+@Getter
 public class Game {
     private final Player firstPlayer;
-    private Player secondPlayer;
+    private final Player secondPlayer;
     private final Tictactoe tictactoe;
 
-    Game(Player firstPlayer) {
+    Game(Player firstPlayer, Player secondPlayer) {
         this.firstPlayer = firstPlayer;
-        this.secondPlayer = PlayerFactory.createPlayerHolder(); // prevents throwing null pointer exceptions when iterating over games list
-        this.tictactoe = TictactoeFactory.createTictactoe();
-    }
-
-    public void attachSecondPlayer(Player secondPlayer) {
         this.secondPlayer = secondPlayer;
-    }
-
-    public Player getFirstPlayer() {
-        return firstPlayer;
-    }
-
-    public Player getSecondPlayer() {
-        return secondPlayer;
-    }
-
-    public Tictactoe getTictactoe() {
-        return tictactoe;
+        tictactoe = TictactoeFactory.createTictactoe();
     }
 }
