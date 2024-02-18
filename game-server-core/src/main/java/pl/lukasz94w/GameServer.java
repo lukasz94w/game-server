@@ -247,8 +247,8 @@ public class GameServer extends TextWebSocketHandler {
         // if it's not a lonely session player server should: inform second player about disconnection and remove the game
         Optional<WebSocketSession> optionalOpponentSession = findOptionalOpponentSession(disconnectingSession);
         if (optionalOpponentSession.isPresent()) {
-            WebSocketSession foundOpponentSession = optionalOpponentSession.get();
-            foundOpponentSession.sendMessage(gameServerUtil.jsonMessage(SERVER_SESSION_STATUS_UPDATE_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
+            WebSocketSession opponentSession = optionalOpponentSession.get();
+            opponentSession.sendMessage(gameServerUtil.jsonMessage(SERVER_SESSION_STATUS_UPDATE_PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
         }
 
         removeGame(disconnectingSession);
@@ -327,8 +327,8 @@ public class GameServer extends TextWebSocketHandler {
         Tictactoe.State state = tictactoe.determineNewTictactoeState();
 
         if (!state.equals(ONGOING)) {
-            informPlayers(confirmingPlayer, state, opponent);
-            informHistoryService(game, state);
+            informPlayersAboutFinishedGame(confirmingPlayer, state, opponent);
+            informHistoryServiceAboutFinishedGame(game, state);
         }
     }
 
@@ -340,12 +340,12 @@ public class GameServer extends TextWebSocketHandler {
         lonelyPlayer = null;
     }
 
-    private void informPlayers(Player confirmingPlayer, Tictactoe.State state, Player opponent) throws IOException {
+    private void informPlayersAboutFinishedGame(Player confirmingPlayer, Tictactoe.State state, Player opponent) throws IOException {
         confirmingPlayer.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, state.message()));
         opponent.getSession().sendMessage(gameServerUtil.jsonMessage(SERVER_GAME_UPDATE_GAME_ENDED, state.message()));
     }
 
-    private void informHistoryService(Game game, Tictactoe.State state) throws JsonProcessingException {
+    private void informHistoryServiceAboutFinishedGame(Game game, Tictactoe.State state) throws JsonProcessingException {
         restTemplate.postForEntity(serviceUrls.saveGameUrl, gameServerUtil.getRequestHttpEntity(game, state), String.class);
     }
 
