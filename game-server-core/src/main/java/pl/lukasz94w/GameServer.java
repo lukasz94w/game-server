@@ -124,6 +124,24 @@ public class GameServer extends TextWebSocketHandler {
         }
     }
 
+    private void verifyIfPLayerIsLonelyPlayer(String userName) {
+        if (isLonelyPlayer()) {
+            if (lonelyPlayer.getName().equals(userName)) {
+                throw new GameServerAccessDeniedException("Player already waiting in lobby!");
+            }
+        }
+    }
+
+    private void verifyIfPlayerAlreadyHaveAGame(String userName) {
+        games.stream()
+                .flatMap(game -> Stream.of(game.getFirstPlayer().getName(), game.getSecondPlayer().getName()))
+                .filter(name -> name.equals(userName))
+                .findFirst()
+                .ifPresent(name -> {
+                    throw new GameServerAccessDeniedException("There can only be one game per player");
+                });
+    }
+
     // catch original request containing session cookie and send it to validation
     // endpoint to check whether the session exist for sent cookie
     private String verifyAuthenticationAndGetUserName(HttpHeaders authenticationHeaders) {
@@ -144,28 +162,9 @@ public class GameServer extends TextWebSocketHandler {
         return response.getBody();
     }
 
-    private void verifyIfPLayerIsLonelyPlayer(String userName) {
-        if (isLonelyPlayer()) {
-            if (lonelyPlayer.getName().equals(userName)) {
-                throw new GameServerAccessDeniedException("Player already waiting in lobby!");
-            }
-        }
-    }
-
-    private void verifyIfPlayerAlreadyHaveAGame(String userName) {
-        games.stream()
-                .flatMap(game -> Stream.of(game.getFirstPlayer().getName(), game.getSecondPlayer().getName()))
-                .filter(name -> name.equals(userName))
-                .findFirst()
-                .ifPresent(name -> {
-                    throw new GameServerAccessDeniedException("There can only be one game per player");
-                });
-    }
-
     private void acceptSession(WebSocketSession session, String playerName) {
         try {
             handlePlayersPairing(session, playerName);
-            logger.info("Server connection opened with session id: {}. Player name: {}", session.getId(), playerName);
         } catch (Exception e) {
             logger.error("Exception in acceptSession: {}", ExceptionUtils.getStackTrace(e));
         }
