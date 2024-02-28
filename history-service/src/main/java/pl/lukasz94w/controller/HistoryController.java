@@ -27,6 +27,7 @@ public class HistoryController {
 
     @GetMapping("/findGamesForUser")
     public ResponseEntity<Collection<GameDto>> findGamesForUser(@RequestHeader HttpHeaders requestHeaders) {
-        return new ResponseEntity<>(gameService.findGamesForUser(requestHeaders), HttpStatus.OK);
+        String userName = requestHeaders.getFirst("userName"); // coming from api-gateway-service
+        return new ResponseEntity<>(gameService.findGamesForUser(userName), HttpStatus.OK);
     }
 }

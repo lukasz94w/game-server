@@ -18,7 +18,7 @@ import java.nio.charset.StandardCharsets;
 
 @Order(value = Ordered.HIGHEST_PRECEDENCE)
 @Component
-@WebFilter(filterName = "SaveRequestCachingFilter", urlPatterns = "/save")
+@WebFilter(filterName = "SaveRequestCachingFilter")
 public class SaveRequestCachingFilter extends OncePerRequestFilter {
 
     private final static Logger logger = LoggerFactory.getLogger(SaveRequestCachingFilter.class);
@@ -27,7 +27,13 @@ public class SaveRequestCachingFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         CachedHttpServletRequest cachedHttpServletRequest = new CachedHttpServletRequest(request);
-        logger.info("Request body: " + IOUtils.toString(cachedHttpServletRequest.getInputStream(), StandardCharsets.UTF_8));
+        logger.info("Game finished: " + IOUtils.toString(cachedHttpServletRequest.getInputStream(), StandardCharsets.UTF_8));
         filterChain.doFilter(cachedHttpServletRequest, response);
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return !path.startsWith("/api/v1/history/save");
     }
 }
