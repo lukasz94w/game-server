@@ -6,18 +6,15 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>log/game-server-core.log</file>
+        <file>log/auth-service.log</file>
         <append>true</append>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-4relative [%thread] %-5level %logger{35} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <logger name="pl.lukasz94w.GameServer" level="INFO">
-        <appender-ref ref="FILE"/>
-    </logger>
-
-    <logger name="pl.lukasz94w.interceptor.LoggingHandshakeInterceptor" level="INFO">
+    <logger name="org.springframework.web.filter.CommonsRequestLoggingFilter">
+        <level value="DEBUG"/>
         <appender-ref ref="FILE"/>
     </logger>
 

@@ -1,6 +1,5 @@
 package pl.lukasz94w.controller;
 
-import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -24,8 +23,7 @@ public class AuthController {
     }
 
     @GetMapping("/verifySessionActive")
-    public ResponseEntity<String> verifySessionActive(Authentication authentication, HttpSession httpSession) {
-        String responseBody = authentication.getName() + " successfully authenticated. Session id: " + httpSession.getId();
-        return new ResponseEntity<>(responseBody, HttpStatus.OK);
+    public ResponseEntity<String> verifySessionActive(Authentication authentication) {
+        return new ResponseEntity<>(authentication.getName(), HttpStatus.OK);
     }
 }

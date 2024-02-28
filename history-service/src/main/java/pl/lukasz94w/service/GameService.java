@@ -1,17 +1,9 @@
 package pl.lukasz94w.service;
 
 import jakarta.annotation.Nullable;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
 import pl.lukasz94w.entity.Game;
 import pl.lukasz94w.entity.Player;
-import pl.lukasz94w.exception.AuthenticationException;
 import pl.lukasz94w.exception.GameException;
 import pl.lukasz94w.repository.GameRepository;
 import pl.lukasz94w.repository.PlayerRepository;
@@ -29,16 +21,11 @@ public class GameService {
     private final GameRepository gameRepository;
     private final PlayerRepository playerRepository;
     private final MapperDto mapperDto;
-    private final RestTemplate restTemplate;
-
-    @Value("${pl.lukasz94w.getUserNameUrl}")
-    private String getUserNameUrl;
 
     public GameService(GameRepository gameRepository, PlayerRepository playerRepository, MapperDto mapperDto) {
         this.gameRepository = gameRepository;
         this.playerRepository = playerRepository;
         this.mapperDto = mapperDto;
-        this.restTemplate = new RestTemplate();
     }
 
     public void save(FinishedGameData data) {
@@ -66,12 +53,7 @@ public class GameService {
         gameRepository.save(game);
     }
 
-    // I decided to let only the player read it own results. For such reason I forward original request (containing cookie) and
-    // get player/user name for that cookie from AuthService. In final form it will be done in API gateway which the redirect
-    // to following endpoint after authentication is successful.
-    public Collection<GameDto> findGamesForUser(HttpHeaders requestHttpHeaders) {
-        String userName = getUserName(requestHttpHeaders);
-
+    public Collection<GameDto> findGamesForUser(String userName) {
         Player player = playerRepository.getPlayerByName(userName);
         Collection<Game> games = gameRepository.findGamesByFirstPlayerOrSecondPlayer(player, player);
 
@@ -106,15 +88,6 @@ public class GameService {
             return secondPlayer;
         } else {
             return null;
-        }
-    }
-
-    private String getUserName(HttpHeaders requestHttpHeaders) {
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(getUserNameUrl, HttpMethod.GET, new HttpEntity<>(requestHttpHeaders), String.class);
-            return response.getBody();
-        } catch (HttpClientErrorException e) {
-            throw new AuthenticationException("Failed authentication, access blocked");
         }
     }
 }
