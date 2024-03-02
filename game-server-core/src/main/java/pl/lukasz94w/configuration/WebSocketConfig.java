@@ -15,6 +15,7 @@ import pl.lukasz94w.interceptor.LoggingHandshakeInterceptor;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final LoggingHandshakeInterceptor loggingHandshakeInterceptor;
+
     private final WebSocketServerConfig webSocketServerConfig;
 
     private final RestTemplate historyServiceClient;
