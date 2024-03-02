@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+
+  api-gateway-service:
+    image: lukasz94w/api-gateway-service:latest
+    container_name: api-gateway-service
+    ports:
+      - "8081:8080"
+    expose:
+      - "8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
+    depends_on:
+      - eureka-server
+
+  eureka-server:
+    image: lukasz94w/eureka-server:latest
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
