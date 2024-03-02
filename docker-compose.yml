@@ -1,6 +1,14 @@
 version: '3.8'
 services:
 
+  eureka-server:
+    image: lukasz94w/eureka-server:latest
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
   api-gateway-service:
     image: lukasz94w/api-gateway-service:latest
     container_name: api-gateway-service
@@ -14,10 +22,47 @@ services:
     depends_on:
       - eureka-server
 
-  eureka-server:
-    image: lukasz94w/eureka-server:latest
-    container_name: eureka-server
-    ports:
-      - "8761:8761"
+  auth-service-redis:
+    image: redis:7.2.4
+    volumes:
+      - ./auth-service-redis/session-data:/var/lib/redis
+
+  auth-service:
+    image: lukasz94w/auth-service:latest
+    container_name: auth-service
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - api-gateway-service
+      - eureka-server
+      - auth-service-redis
+
+  game-server-core:
+    image: lukasz94w/game-server-core:latest
+    container_name: game-server-core
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - api-gateway-service
+      - eureka-server
+
+  history-service-mariadb:
+    image: mariadb:10.4
+    restart: always
+    environment:
+      MARIADB_DATABASE: database
+      MARIADB_USER: root
+      MARIADB_PASSWORD: root
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+        - ./history-service-mariadb/history-data:/var/lib/mysql
+
+  history-service:
+    image: lukasz94w/history-service:latest
+    container_name: history-service
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - api-gateway-service
+      - eureka-server
+      - history-service-mariadb
