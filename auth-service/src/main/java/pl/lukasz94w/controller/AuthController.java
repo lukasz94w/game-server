@@ -17,13 +17,8 @@ public class AuthController {
         return new ResponseEntity<>(authentication.getName(), HttpStatus.OK);
     }
 
-    @GetMapping("/getUserName")
-    public ResponseEntity<String> getUserName(Authentication authentication) {
-        return new ResponseEntity<>(authentication.getName(), HttpStatus.OK);
-    }
-
-    @GetMapping("/verifySessionActive")
-    public ResponseEntity<String> verifySessionActive(Authentication authentication) {
+    @GetMapping("/verifyCookieAndGetUserName")
+    public ResponseEntity<String> verifyCookieAndGetUserName(Authentication authentication) {
         return new ResponseEntity<>(authentication.getName(), HttpStatus.OK);
     }
 }
