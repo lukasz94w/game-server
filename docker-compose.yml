@@ -19,6 +19,8 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
+    volumes:
+      - ./apps-log:/log
     depends_on:
       - eureka-server
 
@@ -32,6 +34,8 @@ services:
     container_name: auth-service
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+    volumes:
+      - ./apps-log:/log
     depends_on:
       - api-gateway-service
       - eureka-server
@@ -42,12 +46,14 @@ services:
     container_name: game-server-core
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+    volumes:
+      - ./apps-log:/log
     depends_on:
       - api-gateway-service
       - eureka-server
 
   history-service-mariadb:
-    image: mariadb:10.4
+    image: mariadb:11.4.1-rc
     restart: always
     environment:
       MARIADB_DATABASE: database
@@ -55,13 +61,15 @@ services:
       MARIADB_PASSWORD: root
       MARIADB_ROOT_PASSWORD: root
     volumes:
-        - ./history-service-mariadb/history-data:/var/lib/mysql
+      - ./history-service-mariadb/history-data:/var/lib/mysql
 
   history-service:
     image: lukasz94w/history-service:latest
     container_name: history-service
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+    volumes:
+      - ./apps-log:/log
     depends_on:
       - api-gateway-service
       - eureka-server
