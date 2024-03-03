@@ -63,7 +63,7 @@ public class Tictactoe {
         }
     }
 
-    public State determineNewTictactoeState() {
+    public Result checkWhetherGameEnded() {
         int[][] winningCombinations = {
                 {0, 1, 2},
                 {3, 4, 5},
@@ -89,11 +89,11 @@ public class Tictactoe {
                     if (valueA.equals(FIRST_PLAYER_SYMBOL)) {
                         numberOfWinningMovements = getNumberOfWinningMovements(FIRST_PLAYER_SYMBOL);
                         gameEndedUTC = getCurrentUTCZonedDateTime();
-                        return State.FIRST_PLAYER_WON;
+                        return Result.FIRST_PLAYER_WON;
                     } else {
                         numberOfWinningMovements = getNumberOfWinningMovements(SECOND_PLAYER_SYMBOL);
                         gameEndedUTC = getCurrentUTCZonedDateTime();
-                        return State.SECOND_PLAYER_WON;
+                        return Result.SECOND_PLAYER_WON;
                     }
                 }
             }
@@ -101,10 +101,10 @@ public class Tictactoe {
 
         if (boardState.size() == 9) {
             gameEndedUTC = getCurrentUTCZonedDateTime();
-            return State.UNRESOLVED;
+            return Result.UNRESOLVED;
         }
 
-        return State.ONGOING;
+        return Result.ONGOING;
     }
 
     private ZonedDateTime getCurrentUTCZonedDateTime() {
@@ -118,7 +118,7 @@ public class Tictactoe {
                 .count();
     }
 
-    public enum State {
+    public enum Result {
         ONGOING(""),
         FIRST_PLAYER_WON("1st player won"),
         SECOND_PLAYER_WON("2nd player won"),
@@ -126,7 +126,7 @@ public class Tictactoe {
 
         private final String message;
 
-        State(String message) {
+        Result(String message) {
             this.message = message;
         }
 
