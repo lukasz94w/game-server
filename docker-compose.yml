@@ -26,6 +26,7 @@ services:
 
   auth-service-redis:
     image: redis:7.2.4
+    container_name: auth-service-redis
     volumes:
       - ./auth-service-redis/session-data:/var/lib/redis
 
@@ -54,6 +55,7 @@ services:
 
   history-service-mariadb:
     image: mariadb:11.4.1-rc
+    container_name: history-service-mariadb
     restart: always
     environment:
       MARIADB_DATABASE: database

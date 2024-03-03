@@ -1,4 +1,4 @@
-package pl.lukasz94w.request;
+package pl.lukasz94w.dto.http.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
