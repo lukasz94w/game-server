@@ -35,4 +35,6 @@ game-server.iml
 game-server-core.log
 
 ### log ###
-log/
+history-service-mariadb/
+auth-service-redis/
+apps-log/
