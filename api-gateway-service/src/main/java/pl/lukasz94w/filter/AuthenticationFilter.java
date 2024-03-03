@@ -43,7 +43,7 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Object> {
             return webClientBuilder
                     .build()
                     .get()
-                    .uri("lb://auth-service/api/v1/auth/verifySessionActive")
+                    .uri("lb://auth-service/api/v1/auth/verifyCookieAndGetUserName")
                     .headers(httpHeaders -> httpHeaders.addAll(requestHeaders))
                     .retrieve()
                     .bodyToMono(String.class)
