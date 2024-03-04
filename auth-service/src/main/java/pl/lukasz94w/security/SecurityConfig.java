@@ -5,6 +5,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.userdetails.User;
@@ -14,18 +18,19 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.HttpStatusReturningLogoutSuccessHandler;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import pl.lukasz94w.cookie.SafeMirroredSessionCookieCreator;
+import pl.lukasz94w.filter.LoginAttemptsListenerFilter;
 import pl.lukasz94w.login.NoPopupBasicAuthenticationEntryPoint;
 
 import java.util.Arrays;
 
+
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     @Value("${pl.lukasz94w.safe.mirrored.session.cookie.name}")
@@ -59,7 +64,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.httpBasic(httpBasicConfigurer -> httpBasicConfigurer.authenticationEntryPoint(noPopupBasicAuthenticationEntryPoint()));
 
-        http.addFilterBefore(safeMirroredSessionCookieCreator(), UsernamePasswordAuthenticationFilter.class);
+        http.addFilter(loginAttemptsListenerFilter());
 
         // Store session in repository (redis in this situation - props set in application.properties).
         http.httpBasic(httpBasicConfigurer -> httpBasicConfigurer.securityContextRepository(httpSessionSecurityContextRepository()));
@@ -80,6 +85,8 @@ public class SecurityConfig {
                 .deleteCookies(safeMirroredSessionCookieName)
         );
 
+        http.authenticationManager(authenticationManager());
+
         http.sessionManagement(sessionManagementConfigurer -> sessionManagementConfigurer.maximumSessions(1));
 
         return http.build();
@@ -88,6 +95,19 @@ public class SecurityConfig {
     @Bean
     protected PasswordEncoder bcryptPasswordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    protected AuthenticationManager authenticationManager() {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+        authProvider.setUserDetailsService(createInMemoryUsers());
+        authProvider.setPasswordEncoder(bcryptPasswordEncoder());
+        return new ProviderManager(authProvider);
+    }
+
+    @Bean
+    protected LoginAttemptsListenerFilter loginAttemptsListenerFilter() {
+        return new LoginAttemptsListenerFilter(authenticationManager(), safeMirroredSessionCookieName, safeMirroredSessionCookieMaxAge);
     }
 
     @Bean
@@ -108,15 +128,9 @@ public class SecurityConfig {
         return new HttpStatusReturningLogoutSuccessHandler(HttpStatus.NO_CONTENT);
     }
 
-
     // required to make maximumSessions() setting works properly
     @Bean
     protected HttpSessionEventPublisher httpSessionEventPublisher() {
         return new HttpSessionEventPublisher();
-    }
-
-    @Bean
-    protected SafeMirroredSessionCookieCreator safeMirroredSessionCookieCreator() {
-        return new SafeMirroredSessionCookieCreator(safeMirroredSessionCookieName, safeMirroredSessionCookieMaxAge);
     }
 }
