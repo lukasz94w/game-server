@@ -6,19 +6,19 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>log/auth-service.log</file>
+        <file>local-log/auth-service.log</file>
         <append>true</append>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-4relative [%thread] %-5level %logger{35} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <logger name="org.springframework.web.filter.CommonsRequestLoggingFilter">
+    <logger name="pl.lukasz94w.logging.WithoutLoggingBeforeRequestFilter">
         <level value="DEBUG"/>
         <appender-ref ref="FILE"/>
     </logger>
 
-    <logger name="pl.lukasz94w.filter.LoginAttemptsListenerFilter">
+    <logger name="pl.lukasz94w.filter.LoginSafeCookieInjector">
         <level value="INFO"/>
         <appender-ref ref="FILE"/>
     </logger>

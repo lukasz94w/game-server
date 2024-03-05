@@ -20,6 +20,7 @@ import pl.lukasz94w.configuration.WebSocketServerConfig;
 import pl.lukasz94w.dto.http.request.FinishedGameData;
 import pl.lukasz94w.exception.GameException;
 import pl.lukasz94w.exception.GameServerAccessDeniedException;
+import pl.lukasz94w.exception.MissingParameterException;
 import pl.lukasz94w.game.Game;
 import pl.lukasz94w.game.GameFactory;
 import pl.lukasz94w.player.Player;
@@ -31,6 +32,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -76,7 +79,11 @@ public class GameServer extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession disconnectingSession, CloseStatus status) {
         try {
-            handleDisconnection(disconnectingSession);
+            if (isCallingSessionLonelyPlayerSession(disconnectingSession)) {
+                handleLonelyPlayerDisconnection();
+            } else {
+                handleActivePlayerDisconnection(disconnectingSession);
+            }
             logger.info("Server connection closed: {}, session id: {}", status, disconnectingSession.getId());
         } catch (Exception e) {
             logger.error("Exception in afterConnectionClosed: {}", ExceptionUtils.getStackTrace(e));
@@ -120,21 +127,15 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private void verifyIfPLayerIsLonelyPlayer(String userName) {
-        if (isLonelyPlayer()) {
-            if (lonelyPlayer.getName().equals(userName)) {
-                throw new GameServerAccessDeniedException("Player already waiting in lobby!");
-            }
+        if (isLonelyPlayer() && lonelyPlayer.getName().equals(userName)) {
+            throw new GameServerAccessDeniedException("Player already waiting in lobby!");
         }
     }
 
     private void verifyIfPlayerAlreadyHaveAGame(String userName) {
-        games.stream()
-                .flatMap(game -> Stream.of(game.getFirstPlayer().getName(), game.getSecondPlayer().getName()))
-                .filter(name -> name.equals(userName))
-                .findFirst()
-                .ifPresent(name -> {
-                    throw new GameServerAccessDeniedException("There can only be one game per player");
-                });
+        games.stream().flatMap(game -> Stream.of(game.getFirstPlayer().getName(), game.getSecondPlayer().getName())).filter(name -> name.equals(userName)).findFirst().ifPresent(name -> {
+            throw new GameServerAccessDeniedException("There can only be one game per player");
+        });
     }
 
     private void acceptSession(WebSocketSession session, String playerName) {
@@ -159,7 +160,7 @@ public class GameServer extends TextWebSocketHandler {
 
     private String validateAndGetMessageType(JSONObject payload) {
         if (!payload.has(MESSAGE_TYPE)) {
-            throw new IllegalStateException("Missing message type header");
+            throw new MissingParameterException("Missing message type header");
         }
 
         return payload.getString(MESSAGE_TYPE);
@@ -180,22 +181,32 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private void checkLonelyPlayerSession(long currentTimestamp) {
-        if (isLonelyPlayer()) {
-            if (isHeartbeatExpired(currentTimestamp).test(lonelyPlayer)) {
-                closeInactiveSession(lonelyPlayer);
-            }
+        if (isLonelyPlayer() && isHeartbeatExpired(currentTimestamp).test(lonelyPlayer)) {
+            closeInactiveSession(lonelyPlayer);
         }
     }
 
     private void checkActiveGamesSessions(long currentTimestamp) {
-        games.stream()
-                .flatMap(game -> Stream.of(game.getFirstPlayer(), game.getSecondPlayer()))
-                .filter(isHeartbeatExpired(currentTimestamp))
-                .forEach(this::closeInactiveSession);
+        games.stream().flatMap(game -> Stream.of(game.getFirstPlayer(), game.getSecondPlayer())).filter(isHeartbeatExpired(currentTimestamp)).forEach(this::closeInactiveSession);
     }
 
     private Predicate<Player> isHeartbeatExpired(long currentTimestamp) {
         return player -> currentTimestamp - player.getLastHeartbeat() > webSocketServerConfig.requiredHeartbeatFrequency;
+    }
+
+    private void handleLonelyPlayerDisconnection() {
+        clearLonelyPlayerReference();
+    }
+
+    private void handleActivePlayerDisconnection(WebSocketSession disconnectingSession) throws IOException {
+        // if it's not a lonely session player server should: inform second player about disconnection and remove the game
+        Optional<WebSocketSession> optionalOpponentSession = findOptionalOpponentSession(disconnectingSession);
+        if (optionalOpponentSession.isPresent()) {
+            WebSocketSession opponentSession = optionalOpponentSession.get();
+            opponentSession.sendMessage(buildTextMessage(PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
+        }
+
+        removeGame(disconnectingSession);
     }
 
     private void closeInactiveSession(Player player) {
@@ -207,24 +218,6 @@ public class GameServer extends TextWebSocketHandler {
         }
     }
 
-    private void handleDisconnection(WebSocketSession disconnectingSession) throws IOException {
-        if (isLonelyPlayer()) {
-            if (lonelyPlayer.getSession().equals(disconnectingSession)) {
-                clearLonelyPlayerReference();
-                return; // if that's lonely session there is no need to do anything more
-            }
-        }
-
-        // if it's not a lonely session player server should: inform second player about disconnection and remove the game
-        Optional<WebSocketSession> optionalOpponentSession = findOptionalOpponentSession(disconnectingSession);
-        if (optionalOpponentSession.isPresent()) {
-            WebSocketSession opponentSession = optionalOpponentSession.get();
-            opponentSession.sendMessage(buildTextMessage(PAIRED_SESSION_DISCONNECTED, "Your opponent has disconnected"));
-        }
-
-        removeGame(disconnectingSession);
-    }
-
     // Send refreshed game status to opponent. Game status in the server will be updated only
     // after getting the confirmation of receiving the game status update from the opponent.
     private void forwardGameUpdateToOpponent(WebSocketSession session, JSONObject payload) throws IOException {
@@ -233,34 +226,27 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private WebSocketSession findOpponentSession(WebSocketSession messagingSession) {
-        return games.stream()
-                .filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession))
-                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession())
-                .findFirst()
-                .orElseThrow(() -> new GameException("No opponent session found for messaging session: " + messagingSession));
+        return games.stream().filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession)).map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession()).findFirst().orElseThrow(() -> new GameException("No opponent session found for messaging session: " + messagingSession));
     }
 
     private Optional<WebSocketSession> findOptionalOpponentSession(WebSocketSession messagingSession) {
-        return games.stream()
-                .filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession))
-                .map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession())
-                .findFirst();
+        return games.stream().filter(game -> game.getFirstPlayer().getSession().equals(messagingSession) || game.getSecondPlayer().getSession().equals(messagingSession)).map(game -> game.getFirstPlayer().getSession().equals(messagingSession) ? game.getSecondPlayer().getSession() : game.getFirstPlayer().getSession()).findFirst();
     }
 
     private void updateLastHeartbeat(WebSocketSession callingSession) throws IOException {
-        if (isLonelyPlayer()) {
-            if (lonelyPlayer.getSession().equals(callingSession)) {
-                lonelyPlayer.updateLastHeartbeat();
-                return;
-            }
+        if (isCallingSessionLonelyPlayerSession(callingSession)) {
+            updateLonelyPlayerLastHeartbeat();
+        } else {
+            updateActivePlayerLastHeartbeat(callingSession);
         }
+    }
 
-        Player sessionRelatedPlayer = games.stream()
-                .filter(game -> game.getFirstPlayer().getSession().equals(callingSession) || game.getSecondPlayer().getSession().equals(callingSession))
-                .map(game -> game.getFirstPlayer().getSession().equals(callingSession) ? game.getFirstPlayer() : game.getSecondPlayer())
-                .findFirst()
-                .orElseThrow(() -> new GameException("No related session found"));
+    private void updateLonelyPlayerLastHeartbeat() {
+        lonelyPlayer.updateLastHeartbeat();
+    }
 
+    private void updateActivePlayerLastHeartbeat(WebSocketSession callingSession) throws IOException {
+        Player sessionRelatedPlayer = games.stream().filter(game -> game.getFirstPlayer().getSession().equals(callingSession) || game.getSecondPlayer().getSession().equals(callingSession)).map(game -> game.getFirstPlayer().getSession().equals(callingSession) ? game.getFirstPlayer() : game.getSecondPlayer()).findFirst().orElseThrow(() -> new GameException("No related session found"));
         sessionRelatedPlayer.updateLastHeartbeat();
         callingSession.sendMessage(buildTextMessage(HEARTBEAT_RECEIVED_CONFIRMATION, String.valueOf(System.currentTimeMillis())));
     }
@@ -271,10 +257,7 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private Game findGameRelated(WebSocketSession session) {
-        return games.stream()
-                .filter(game -> game.getFirstPlayer().getSession().equals(session) || game.getSecondPlayer().getSession().equals(session))
-                .findFirst()
-                .orElseThrow(() -> new GameException("No related game found"));
+        return games.stream().filter(game -> game.getFirstPlayer().getSession().equals(session) || game.getSecondPlayer().getSession().equals(session)).findFirst().orElseThrow(() -> new GameException("No related game found"));
     }
 
     // After receiving confirmation from the opponent: 1. send a confirmation to the player about
@@ -308,6 +291,10 @@ public class GameServer extends TextWebSocketHandler {
         return lonelyPlayer != null;
     }
 
+    private boolean isCallingSessionLonelyPlayerSession(WebSocketSession callingSession) {
+        return isLonelyPlayer() && lonelyPlayer.getSession().equals(callingSession);
+    }
+
     private void clearLonelyPlayerReference() {
         lonelyPlayer = null;
     }
@@ -326,11 +313,7 @@ public class GameServer extends TextWebSocketHandler {
     }
 
     private TextMessage buildTextMessage(String messageType, String messageData) {
-        Map<String, String> message = Map.of(
-                MESSAGE_TYPE, messageType,
-                DATA, messageData
-        );
-
+        Map<String, String> message = Map.of(MESSAGE_TYPE, messageType, DATA, messageData);
         return new TextMessage(new JSONObject(message).toString());
     }
 
@@ -362,15 +345,19 @@ public class GameServer extends TextWebSocketHandler {
 
     // cleaning just in case rejected session haven't closed the session after 10 seconds since receiving rejection message
     private void ensureSessionClosed(WebSocketSession session) {
-        new Thread(() -> {
-            try {
-                Thread.sleep(10000);
-                if (session.isOpen()) {
-                    session.close();
+        try (ExecutorService executorService = Executors.newFixedThreadPool(1)) {
+            executorService.submit(() -> {
+                try {
+                    Thread.sleep(10000);
+                    if (session.isOpen()) {
+                        session.close();
+                    }
+                } catch (Exception e) {
+                    logger.error("Exception during closing the rejected session: {}", ExceptionUtils.getStackTrace(e));
                 }
-            } catch (Exception e) {
-                logger.error("Exception during closing the rejected session: {}", ExceptionUtils.getStackTrace(e));
-            }
-        }).start();
+            });
+        } catch (Exception e) {
+            logger.error("Exception in ExecutorService: {}", ExceptionUtils.getStackTrace(e));
+        }
     }
 }
