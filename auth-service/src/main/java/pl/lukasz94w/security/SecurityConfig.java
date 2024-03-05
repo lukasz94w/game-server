@@ -22,7 +22,7 @@ import org.springframework.security.web.authentication.logout.HttpStatusReturnin
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import pl.lukasz94w.filter.LoginAttemptsListenerFilter;
+import pl.lukasz94w.filter.LoginSafeCookieInjector;
 import pl.lukasz94w.login.NoPopupBasicAuthenticationEntryPoint;
 
 import java.util.Arrays;
@@ -106,8 +106,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    protected LoginAttemptsListenerFilter loginAttemptsListenerFilter() {
-        return new LoginAttemptsListenerFilter(authenticationManager(), safeMirroredSessionCookieName, safeMirroredSessionCookieMaxAge);
+    protected LoginSafeCookieInjector loginAttemptsListenerFilter() {
+        return new LoginSafeCookieInjector(authenticationManager(), safeMirroredSessionCookieName, safeMirroredSessionCookieMaxAge);
     }
 
     @Bean

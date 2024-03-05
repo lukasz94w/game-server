@@ -20,7 +20,7 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY=TRACE
     volumes:
-      - ./apps-log:/log
+      - ./docker-log:/log
     depends_on:
       - eureka-server
 
@@ -36,7 +36,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
     volumes:
-      - ./apps-log:/log
+      - ./docker-log:/log
     depends_on:
       - api-gateway-service
       - eureka-server
@@ -48,7 +48,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
     volumes:
-      - ./apps-log:/log
+      - ./docker-log:/log
     depends_on:
       - api-gateway-service
       - eureka-server
@@ -71,7 +71,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=docker
     volumes:
-      - ./apps-log:/log
+      - ./docker-log:/log
     depends_on:
       - api-gateway-service
       - eureka-server

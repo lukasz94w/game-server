@@ -14,11 +14,20 @@ public class AuthController {
     // basically it should be POST request...
     @GetMapping("/signIn")
     public ResponseEntity<String> signIn(Authentication authentication) {
-        return new ResponseEntity<>(authentication.getName(), HttpStatus.OK);
+        return successData(authentication);
     }
 
     @GetMapping("/verifyCookieAndGetUserName")
     public ResponseEntity<String> verifyCookieAndGetUserName(Authentication authentication) {
+        return successData(authentication);
+    }
+
+    @GetMapping("/refreshSession")
+    public ResponseEntity<String> refreshSession(Authentication authentication) {
+        return successData(authentication);
+    }
+
+    private ResponseEntity<String> successData(Authentication authentication) {
         return new ResponseEntity<>(authentication.getName(), HttpStatus.OK);
     }
 }

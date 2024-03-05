@@ -13,24 +13,22 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 import java.util.Base64;
 import java.util.UUID;
 
-public class LoginAttemptsListenerFilter extends BasicAuthenticationFilter {
+public class LoginSafeCookieInjector extends BasicAuthenticationFilter {
 
-    private final Logger logger = LoggerFactory.getLogger(LoginAttemptsListenerFilter.class);
+    private final Logger logger = LoggerFactory.getLogger(LoginSafeCookieInjector.class);
 
     private final String cookieName;
 
     private final Integer cookieMaxAge;
 
-    public LoginAttemptsListenerFilter(AuthenticationManager authenticationManager, String cookieName, Integer cookieMaxAge) {
+    public LoginSafeCookieInjector(AuthenticationManager authenticationManager, String cookieName, Integer cookieMaxAge) {
         super(authenticationManager);
         this.cookieName = cookieName;
         this.cookieMaxAge = cookieMaxAge;
     }
 
     @Override
-    protected void onSuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response,
-                                              Authentication authResult) {
-
+    protected void onSuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, Authentication authResult) {
         logger.info("Successful authentication, user: " + decodeUsernameFromBasicAuth(request.getHeader("Authorization")));
 
         Cookie safeMirroredSessionCookie = new Cookie(cookieName, UUID.randomUUID().toString());
@@ -40,8 +38,7 @@ public class LoginAttemptsListenerFilter extends BasicAuthenticationFilter {
     }
 
 
-    protected void onUnsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response,
-                                                AuthenticationException failed) {
+    protected void onUnsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) {
         logger.info("Failed authentication, user: " + decodeUsernameFromBasicAuth(request.getHeader("Authorization")));
     }
 
