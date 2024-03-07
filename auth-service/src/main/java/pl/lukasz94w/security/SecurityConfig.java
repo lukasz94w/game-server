@@ -64,7 +64,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http.httpBasic(httpBasicConfigurer -> httpBasicConfigurer.authenticationEntryPoint(noPopupBasicAuthenticationEntryPoint()));
 
-        http.addFilter(loginAttemptsListenerFilter());
+        http.addFilter(loginSafeCookieInjector());
 
         // Store session in repository (redis in this situation - props set in application.properties).
         http.httpBasic(httpBasicConfigurer -> httpBasicConfigurer.securityContextRepository(httpSessionSecurityContextRepository()));
@@ -106,7 +106,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    protected LoginSafeCookieInjector loginAttemptsListenerFilter() {
+    protected LoginSafeCookieInjector loginSafeCookieInjector() {
         return new LoginSafeCookieInjector(authenticationManager(), safeMirroredSessionCookieName, safeMirroredSessionCookieMaxAge);
     }
 

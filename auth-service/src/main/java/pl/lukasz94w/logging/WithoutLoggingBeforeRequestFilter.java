@@ -7,7 +7,7 @@ public class WithoutLoggingBeforeRequestFilter extends AbstractRequestLoggingFil
 
     @Override
     protected void beforeRequest(HttpServletRequest httpServletRequest, String message) {
-        // avoid log beforeRequest (containing unprocessed data)
+        // avoid logging beforeRequest (contains unprocessed data)
     }
 
     @Override
