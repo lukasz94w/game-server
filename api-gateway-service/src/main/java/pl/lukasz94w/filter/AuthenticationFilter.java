@@ -43,6 +43,7 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Object> {
 
             logger.info("Incoming request, cookie: {}", cookie);
 
+            // is it ok to build webClient each time it's needed?
             return webClientBuilder
                     .build()
                     .get()
@@ -59,7 +60,7 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Object> {
                         if (error instanceof WebClientResponseException webClientException) {
                             logger.error("WebClientResponseException occurred:, HTTP status code: {}, error message: {}", webClientException.getStatusCode(), webClientException.getStatusText());
                         } else {
-                            logger.error("Exception different than WebClientResponseException occurred: {}", error.getMessage());
+                            logger.error("Exception occurred: {}", error.getMessage());
                         }
                         return onError(exchange);
                     });
